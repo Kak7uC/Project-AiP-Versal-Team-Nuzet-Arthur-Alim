@@ -32,10 +32,10 @@ const (
 )
 
 type AuthState struct {
-	IsDone   bool
-	Code     string
-	Provider string // "github" или "yandex"
-	mu       sync.RWMutex
+	IsDone bool
+	Code   string
+	Type   string // "github" или "yandex"
+	mu     sync.RWMutex
 }
 
 type GitHubUserData struct {
@@ -104,43 +104,43 @@ func (am *AuthModule) StartAuthServer() {
 func (am *AuthModule) handleAuthStatus(w http.ResponseWriter, r *http.Request) {
 	am.authState.mu.RLock()
 	isDone := am.authState.IsDone
-	provider := am.authState.Provider
+	Type := am.authState.Type
 	am.authState.mu.RUnlock()
 
 	response := map[string]interface{}{
-		"is_done":  isDone,
-		"provider": provider,
+		"is_done": isDone,
+		"type":    Type,
 	}
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(response)
 }
 
 func (am *AuthModule) handleAuthURL(w http.ResponseWriter, r *http.Request) {
-	provider := r.URL.Query().Get("provider")
+	Type := r.URL.Query().Get("type")
 
 	var authURL string
-	var providerName string
+	var TypeName string
 
-	switch provider {
+	switch Type {
 	case "yandex":
 		authURL = fmt.Sprintf(
 			"https://oauth.yandex.ru/authorize?response_type=code&client_id=%s&redirect_uri=%s",
 			YANDEX_CLIENT_ID,
 			url.QueryEscape(YANDEX_CALLBACK_URL),
 		)
-		providerName = "Яндекс"
+		TypeName = "Яндекс"
 	default: // github по умолчанию
 		authURL = fmt.Sprintf(
 			"https://github.com/login/oauth/authorize?client_id=%s&redirect_uri=%s&scope=user",
 			GITHUB_CLIENT_ID,
 			url.QueryEscape(GITHUB_CALLBACK_URL),
 		)
-		providerName = "GitHub"
+		TypeName = "GitHub"
 	}
 
 	response := map[string]string{
 		"auth_url": authURL,
-		"provider": providerName,
+		"type":     TypeName,
 	}
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(response)
@@ -161,7 +161,7 @@ func (am *AuthModule) handleGitHubOauth(w http.ResponseWriter, r *http.Request) 
 		am.authState.mu.Lock()
 		am.authState.IsDone = true
 		am.authState.Code = code
-		am.authState.Provider = "github"
+		am.authState.Type = "github"
 		am.authState.mu.Unlock()
 
 		// Получаем токен и данные пользователя
@@ -193,6 +193,7 @@ func (am *AuthModule) handleGitHubOauth(w http.ResponseWriter, r *http.Request) 
 }
 
 func (am *AuthModule) handleYandexOauth(w http.ResponseWriter, r *http.Request) {
+	state := r.URL.Query().Get("state")
 	code := r.URL.Query().Get("code")
 	errorMsg := r.URL.Query().Get("error")
 
@@ -205,7 +206,7 @@ func (am *AuthModule) handleYandexOauth(w http.ResponseWriter, r *http.Request) 
 		am.authState.mu.Lock()
 		am.authState.IsDone = true
 		am.authState.Code = code
-		am.authState.Provider = "yandex"
+		am.authState.Type = "yandex"
 		am.authState.mu.Unlock()
 
 		// Получаем токен доступа
@@ -221,6 +222,7 @@ func (am *AuthModule) handleYandexOauth(w http.ResponseWriter, r *http.Request) 
 			http.Error(w, "Не удалось получить данные пользователя Яндекс", http.StatusInternalServerError)
 			return
 		}
+		go notifyNodeAuth(state, userData.Login)
 
 		// Сохраняем в MongoDB
 		if err := am.saveUserToMongoDB(userData.Login, userData.ID, "yandex"); err != nil {
@@ -228,7 +230,7 @@ func (am *AuthModule) handleYandexOauth(w http.ResponseWriter, r *http.Request) 
 		}
 
 		// Перенаправляем на страницу успеха
-		http.Redirect(w, r, "http://localhost:5173/success", http.StatusSeeOther)
+		http.Redirect(w, r, "http://localhost:5173", http.StatusSeeOther)
 	} else {
 		http.Error(w, "Код авторизации не получен", http.StatusBadRequest)
 	}
@@ -370,7 +372,7 @@ func (am *AuthModule) getYandexUserInfo(accessToken string) (YandexUserData, err
 	return userInfo, nil
 }
 
-func (am *AuthModule) saveUserToMongoDB(login, userID, provider string) error {
+func (am *AuthModule) saveUserToMongoDB(login, userID, Type string) error {
 	if am.mongoClient == nil {
 		return fmt.Errorf("MongoDB клиент не инициализирован")
 	}
@@ -383,23 +385,23 @@ func (am *AuthModule) saveUserToMongoDB(login, userID, provider string) error {
 	err := collection.FindOne(context.TODO(), filter).Decode(&existingUser)
 
 	if err == nil {
-		log.Printf("Пользователь %s (%s) уже существует в системе", login, provider)
+		log.Printf("Пользователь %s (%s) уже существует в системе", login, Type)
 		return nil
 	}
 
 	// Вставляем нового пользователя
 	_, err = collection.InsertOne(context.TODO(), bson.M{
-		"ID":       userID,
-		"Login":    login,
-		"Access":   "Student",
-		"Provider": provider,
+		"ID":     userID,
+		"Login":  login,
+		"Access": "Student",
+		"Type":   Type,
 	})
 
 	if err != nil {
 		return fmt.Errorf("ошибка вставки пользователя: %v", err)
 	}
 
-	log.Printf("Пользователь %s (%s) добавлен в MongoDB", login, provider)
+	log.Printf("Пользователь %s (%s) добавлен в MongoDB", login, Type)
 	return nil
 }
 
@@ -413,11 +415,11 @@ func (am *AuthModule) WaitForAuthCLI() {
 	for {
 		am.authState.mu.RLock()
 		isDone := am.authState.IsDone
-		provider := am.authState.Provider
+		Type := am.authState.Type
 		am.authState.mu.RUnlock()
 
 		if isDone {
-			fmt.Printf("%s аутентификация успешно завершена!\n", provider)
+			fmt.Printf("%s аутентификация успешно завершена!\n", Type)
 			break
 		}
 
@@ -431,8 +433,6 @@ func (am *AuthModule) WaitForAuthCLI() {
 		}
 	}
 }
-
-// //////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 func notifyNodeAuth(state, username string) {
 	url := fmt.Sprintf(
 		"http://localhost:3001/api/auth/confirm?state=%s&user=%s",
@@ -442,15 +442,13 @@ func notifyNodeAuth(state, username string) {
 
 	resp, err := http.Get(url)
 	if err != nil {
-		log.Println("❌ Node не отвечает:", err)
+		log.Println("Node не отвечает:", err)
 		return
 	}
 	defer resp.Body.Close()
 
-	log.Println("✅ Node уведомлён. Пользователь:", username)
+	log.Println("Node уведомлён. Пользователь:", username)
 }
-
-// /////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 func main() {
 	authModule := NewAuthModule()
 
