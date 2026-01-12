@@ -12,7 +12,7 @@ redis.connect().then(() => console.log('✅ Web Client подключен к Red
 
 const AUTH_MODULE_URL = 'http://localhost:8080';
 
-// 1. Проверка статуса (React вызывает это)
+// 1. Проверка статуса
 app.get('/api/auth/status', async (req, res) => {
 	const sessionToken = req.cookies['session_token'];
 	if (!sessionToken) return res.json({ status: 'Unknown' });
@@ -26,8 +26,6 @@ app.get('/api/auth/status', async (req, res) => {
 	} catch (e) {
 		return res.json({ status: 'Unknown' });
 	}
-
-	// Если всё еще Анонимный — пробуем проверить в последний раз, вдруг Redis отстал
 	if (data.status === 'Anonymous' && data.loginToken) {
 		try {
 			const response = await fetch(`${AUTH_MODULE_URL}/api/auth/check/${data.loginToken}`);
@@ -45,7 +43,7 @@ app.get('/api/auth/status', async (req, res) => {
 				}
 			}
 		} catch (error) {
-			// Игнорируем ошибки опроса, возвращаем то, что есть в Redis
+
 		}
 	}
 
@@ -77,17 +75,16 @@ app.get('/api/auth/init', async (req, res) => {
 	}
 });
 
-// 3. ФИНАЛ: Обработка возврата (Самое важное место!)
+// 3. Обработка возврата
 app.get('/api/auth/confirm', async (req, res) => {
 	const { state, user } = req.query;
 	const sessionToken = req.cookies['session_token'];
 
 	console.log(`⚡ Callback от Go. User: ${user}, Token: ${state}`);
 
-	// Если есть кука сессии — сразу обновляем Redis!
+	// Если есть кука сессии — сразу обновляем Redis
 	if (sessionToken) {
 		try {
-			// Спрашиваем у Go токены (Access/Refresh), пока они "горячие"
 			const response = await fetch(`${AUTH_MODULE_URL}/api/auth/check/${state}`);
 
 			if (response.ok) {
@@ -97,19 +94,17 @@ app.get('/api/auth/confirm', async (req, res) => {
 					// Формируем данные авторизованного пользователя
 					const authorizedData = {
 						status: 'Authorized',
-						userName: user, // Берем имя из URL, так как Go его тут гарантирует
+						userName: user,
 						accessToken: authResult.access_token,
 						refreshToken: authResult.refresh_token
 					};
 
-					// ПРИНУДИТЕЛЬНО обновляем Redis
 					await redis.set(sessionToken, JSON.stringify(authorizedData), { EX: 3600 });
 					console.log(`✅ Redis успешно обновлен для пользователя ${user}`);
 				}
 			} else {
 				console.log("Go ответил ошибкой при подтверждении, но мы попробуем пустить пользователя.");
-				// Резервный вариант: если Go удалил токен, но вернул нас сюда — значит вход был.
-				// Просто записываем, что юзер авторизован (без токенов API, но в дашборд пустит)
+
 				const simpleAuth = {
 					status: 'Authorized',
 					userName: user
@@ -133,7 +128,7 @@ app.get('/api/auth/confirm', async (req, res) => {
                     <p>Заходим в личный кабинет...</p>
                 </div>
                 <script>
-                    setTimeout(() => { window.location.href = 'http://localhost:5173'; }, 1000);
+                    setTimeout(() => { window.location.href = '/'; }, 1000);
                 </script>
             </body>
         </html>

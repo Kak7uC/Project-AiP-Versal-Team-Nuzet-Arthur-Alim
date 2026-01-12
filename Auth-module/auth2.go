@@ -401,7 +401,7 @@ func (am *AuthModule) handleGitHubOauth(w http.ResponseWriter, r *http.Request) 
 
 		// Перенаправляем на страницу успеха
 		redirectURL := fmt.Sprintf(
-			"http://localhost:3001/api/auth/confirm?state=%s&user=%s",
+			"http://localhost/api/auth/confirm?state=%s&user=%s",
 			state,
 			url.QueryEscape(userData.Login),
 		)
@@ -491,7 +491,7 @@ func (am *AuthModule) handleYandexOauth(w http.ResponseWriter, r *http.Request) 
 
 		// Перенаправляем на страницу успеха
 		redirectURL := fmt.Sprintf(
-			"http://localhost:3001/api/auth/confirm?state=%s&user=%s",
+			"http://localhost/api/auth/confirm?state=%s&user=%s",
 			state,
 			url.QueryEscape(userData.Login),
 		)
