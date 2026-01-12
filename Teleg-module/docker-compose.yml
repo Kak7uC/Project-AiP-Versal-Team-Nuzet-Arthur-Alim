@@ -1,0 +1,46 @@
+services:
+  redis:
+    image: redis:7-alpine
+    container_name: versal_redis
+    ports:
+      - "6379:6379"
+
+  botlogic:
+    build:
+      context: ./botlogic
+    environment:
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - AUTH_BASE_URL=${AUTH_BASE_URL:-http://auth:8000}
+      - CORE_BASE_URL=${CORE_BASE_URL:-http://core:8000}
+      - BOTLOGIC_DEMO_MODE=${BOTLOGIC_DEMO_MODE:-1}
+      - LOGIN_TOKEN_TTL_SEC=300
+    depends_on:
+      - redis
+    expose:
+      - "8000"
+    restart: unless-stopped
+
+  nginx:
+    image: nginx:1.27-alpine
+    container_name: versal_nginx
+    volumes:
+      - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+    depends_on:
+      - botlogic
+    ports:
+      - "8080:8080"
+    restart: unless-stopped
+
+  telegram_client:
+    build:
+      context: ./telegram_client
+    env_file:
+      - .env
+    environment:
+      - BOTLOGIC_URL=http://nginx:8080
+      - TICK_LOGIN_SEC=${TICK_LOGIN_SEC:-10}
+      - TICK_NOTIFY_SEC=${TICK_NOTIFY_SEC:-15}
+    depends_on:
+      - nginx
+    restart: unless-stopped
