@@ -138,7 +138,31 @@ app.get('/api/auth/confirm', async (req, res) => {
 // 4. Выход
 app.post('/api/auth/logout', async (req, res) => {
 	const sessionToken = req.cookies['session_token'];
-	if (sessionToken) await redis.del(sessionToken);
+	const { all } = req.query;
+
+	if (sessionToken) {
+		if (all === 'true') {
+			try {
+				const cachedData = await redis.get(sessionToken);
+				if (cachedData) {
+					const data = JSON.parse(cachedData);
+					if (data.refreshToken) {
+						await fetch(`${AUTH_MODULE_URL}/api/auth/logout?all=true`, {
+							method: 'POST',
+							headers: { 'Content-Type': 'application/json' },
+							body: JSON.stringify({ refresh_token: data.refreshToken })
+						});
+						console.log("Отправлен запрос на полный выход в Auth Module");
+					}
+				}
+			} catch (e) {
+				console.error("Ошибка при связи с Auth Module при выходе:", e);
+			}
+		}
+
+		await redis.del(sessionToken);
+	}
+
 	res.clearCookie('session_token');
 	res.json({ status: 'LoggedOut' });
 });

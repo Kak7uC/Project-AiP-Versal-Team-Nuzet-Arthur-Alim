@@ -3,7 +3,6 @@ import React from 'react';
 const Dashboard = ({ user, courses, onLogout }) => {
 	return (
 		<div className="dashboard-container" style={{ padding: '20px', fontFamily: 'sans-serif' }}>
-			{/* Шапка личного кабинета */}
 			<header style={{
 				display: 'flex',
 				justifyContent: 'space-between',
@@ -12,6 +11,7 @@ const Dashboard = ({ user, courses, onLogout }) => {
 				paddingBottom: '10px',
 				marginBottom: '20px'
 			}}>
+				{/* Левая часть: Информация о студенте */}
 				<div>
 					<h2 style={{ margin: 0 }}>Личный кабинет</h2>
 					<p style={{ margin: 0, color: '#6b7280' }}>
@@ -19,27 +19,51 @@ const Dashboard = ({ user, courses, onLogout }) => {
 					</p>
 				</div>
 
-				{/* Кнопка выхода */}
-				<button
-					onClick={onLogout}
-					style={{
-						background: '#ef4444',
-						color: 'white',
-						border: 'none',
-						padding: '8px 16px',
-						cursor: 'pointer',
-						borderRadius: '6px',
-						fontWeight: 'bold',
-						transition: 'background 0.2s'
-					}}
-					onMouseOver={(e) => e.target.style.background = '#dc2626'}
-					onMouseOut={(e) => e.target.style.background = '#ef4444'}
-				>
-					Выйти
-				</button>
+				{/* Правая часть: Кнопки (обернуты в div, чтобы быть рядом) */}
+				<div style={{ display: 'flex', gap: '10px' }}>
+
+					{/* Кнопка "Выйти везде" */}
+					<button
+						onClick={() => onLogout(true)}
+						style={{
+							backgroundColor: '#1f2937', // Темно-серый (почти черный)
+							color: 'white',
+							border: 'none',
+							padding: '8px 16px',
+							cursor: 'pointer',
+							borderRadius: '6px',
+							fontWeight: 'bold',
+							transition: 'background 0.2s',
+							fontSize: '14px'
+						}}
+						onMouseOver={(e) => e.target.style.backgroundColor = 'black'}
+						onMouseOut={(e) => e.target.style.backgroundColor = '#1f2937'}
+					>
+						Выйти со всех устройств
+					</button>
+
+					{/* Кнопка "Обычный выход" */}
+					<button
+						onClick={() => onLogout(false)}
+						style={{
+							background: '#ef4444',
+							color: 'white',
+							border: 'none',
+							padding: '8px 16px',
+							cursor: 'pointer',
+							borderRadius: '6px',
+							fontWeight: 'bold',
+							transition: 'background 0.2s',
+							fontSize: '14px'
+						}}
+						onMouseOver={(e) => e.target.style.background = '#dc2626'}
+						onMouseOut={(e) => e.target.style.background = '#ef4444'}
+					>
+						Выйти
+					</button>
+				</div>
 			</header>
 
-			{/* Список курсов */}
 			<main>
 				<h3>Мои курсы и тесты</h3>
 				<div style={{
