@@ -11,7 +11,6 @@ const Dashboard = ({ user, courses, onLogout }) => {
 				paddingBottom: '10px',
 				marginBottom: '20px'
 			}}>
-				{/* Левая часть: Информация о студенте */}
 				<div>
 					<h2 style={{ margin: 0 }}>Личный кабинет</h2>
 					<p style={{ margin: 0, color: '#6b7280' }}>
@@ -19,14 +18,12 @@ const Dashboard = ({ user, courses, onLogout }) => {
 					</p>
 				</div>
 
-				{/* Правая часть: Кнопки (обернуты в div, чтобы быть рядом) */}
 				<div style={{ display: 'flex', gap: '10px' }}>
 
-					{/* Кнопка "Выйти везде" */}
 					<button
 						onClick={() => onLogout(true)}
 						style={{
-							backgroundColor: '#1f2937', // Темно-серый (почти черный)
+							backgroundColor: '#1f2937',
 							color: 'white',
 							border: 'none',
 							padding: '8px 16px',
@@ -42,7 +39,6 @@ const Dashboard = ({ user, courses, onLogout }) => {
 						Выйти со всех устройств
 					</button>
 
-					{/* Кнопка "Обычный выход" */}
 					<button
 						onClick={() => onLogout(false)}
 						style={{

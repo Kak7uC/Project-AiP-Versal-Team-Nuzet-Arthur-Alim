@@ -37,7 +37,7 @@ export default function AuthPage() {
 				<button className="btn btn-primary">Подтвердить код</button>
 
 				<div style={{ marginTop: '20px', textAlign: 'center' }}>
-					<a href="https://t.me/your_bot" style={{ color: '#4f46e5' }}>Перейти в Telegram</a>
+					<a href="https://web.telegram.org/k/#@versal_test_bot" style={{ color: '#4f46e5' }}>Перейти в Telegram</a>
 				</div>
 			</div>
 		</div>

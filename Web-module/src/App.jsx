@@ -49,7 +49,7 @@ function App() {
 
   return (
     <div className="App">
-      {/* Отладочная плашка (как в твоем коде) */}
+      {/* Отладочная плашка */}
       <div style={{
         position: 'fixed', top: 0, left: 0, background: '#000', color: '#fff',
         fontSize: '10px', padding: '2px 5px', zIndex: 9999
