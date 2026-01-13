@@ -128,7 +128,7 @@ app.get('/api/auth/confirm', async (req, res) => {
                     <p>Заходим в личный кабинет...</p>
                 </div>
                 <script>
-                    setTimeout(() => { window.location.href = '/'; }, 1000);
+                    setTimeout(() => { window.location.href = 'http://localhost/'; }, 1000);
                 </script>
             </body>
         </html>

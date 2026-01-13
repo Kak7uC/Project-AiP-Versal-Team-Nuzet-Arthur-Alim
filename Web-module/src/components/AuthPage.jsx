@@ -10,7 +10,7 @@ export default function AuthPage() {
 
 			const data = await response.json();
 
-			// 2. Уходим на страницу авторизации друга
+			// 2. Уходим на страницу авторизации
 			window.location.href = data.url;
 		} catch (err) {
 			alert("Ошибка подключения к серверу");
@@ -22,7 +22,6 @@ export default function AuthPage() {
 			<div className="card">
 				<h2 style={{ textAlign: 'center', marginBottom: '20px' }}>Вход в систему</h2>
 
-				{/* Теперь это кнопки, которые запускают логику */}
 				<button onClick={() => startLogin('github')} className="btn btn-github">
 					Войти через GitHub
 				</button>
