@@ -30,36 +30,25 @@
 // 	YANDEX_CALLBACK_URL  = "http://localhost:8080/oauth/yandex"
 
 // 	MONGODB_URI = "mongodb+srv://kew:samsungty@kewww.1zxx45h.mongodb.net/?appName=kewww"
-// 	JWT_SECRET  = "sigma"
+// 	JWT_SECRET  = "your-secret-key-change-this"
 // )
 
-// type User struct {
-// 	ID            string    `bson:"id"`
-// 	Login         string    `bson:"login"`
-// 	Email         string    `bson:"email"`
-// 	FirstName     string    `bson:"first_name,omitempty"`
-// 	LastName      string    `bson:"last_name,omitempty"`
-// 	Type          string    `bson:"type"`
-// 	Role          string    `bson:"role"`
-// 	Permissions   []string  `bson:"permissions"`
-// 	RefreshTokens []string  `bson:"refresh_tokens"`
-// 	IsBlocked     bool      `bson:"is_blocked"`
-// 	CreatedAt     time.Time `bson:"created_at"`
-// }
+// // ==================== ИЗМЕНЕННЫЕ СТРУКТУРЫ ====================
+
 // type LoginToken struct {
 // 	CreatedAt    time.Time
-// 	Status       string
+// 	Status       string // "pending", "granted", "denied"
 // 	UserID       string
-// 	AccessToken  string
-// 	RefreshToken string
+// 	AccessToken  string // JWT на 1 минуту
+// 	RefreshToken string // JWT на 7 дней
 // }
 
 // type AuthState struct {
-// 	loginTokens map[string]LoginToken
+// 	loginTokens map[string]LoginToken // Храним токены входа (5 минут)
 // 	tokensMutex sync.RWMutex
 // 	IsDone      bool
 // 	Code        string
-// 	Type        string
+// 	Type        string // "github" или "yandex"
 // 	mu          sync.RWMutex
 // }
 
@@ -81,81 +70,6 @@
 // 	mongoClient *mongo.Client
 // }
 
-// var rolesPermissions = map[string][]string{
-// 	"Student": {
-// 		"user:fullName:write:self",
-// 		"user:data:read:self",
-// 		"course:list:read",
-// 		"course:info:read",
-// 		"course:testList:self",
-// 		"course:test:read:self",
-// 		"course:user:add:self",
-// 		"course:user:del:self",
-// 		"quest:read:self",
-// 		"quest:read:attempt",
-// 		"test:answer:read:self",
-// 		"attempt:create:self",
-// 		"attempt:update:self",
-// 		"attempt:complete:self",
-// 		"attempt:read:self",
-// 		"answer:read:self",
-// 		"answer:update:self",
-// 		"answer:del:self",
-// 	},
-
-// 	"Teacher": {
-// 		"user:fullName:write:self",
-// 		"user:data:read:self",
-// 		"course:list:read",
-// 		"course:info:read",
-// 		"course:testList:self",
-// 		"course:test:read:self",
-// 		"course:user:add:self",
-// 		"course:user:del:self",
-// 		"quest:read:self",
-// 		"quest:read:attempt",
-// 		"test:answer:read:self",
-// 		"attempt:create:self",
-// 		"attempt:update:self",
-// 		"attempt:complete:self",
-// 		"attempt:read:self",
-// 		"answer:read:self",
-// 		"answer:update:self",
-// 		"answer:del:self",
-// 		"user:list:read",
-// 		"user:data:read:others",
-// 		"user:roles:read:others",
-// 		"user:block:read:others",
-// 		"course:info:write:own",
-// 		"course:testList:others",
-// 		"course:test:write:own",
-// 		"course:test:add:own",
-// 		"course:test:del:own",
-// 		"course:userList:own",
-// 		"course:user:add:others",
-// 		"course:user:del:others",
-// 		"course:add",
-// 		"course:del:own",
-// 		"quest:list:read:self",
-// 		"quest:update:self",
-// 		"quest:create",
-// 		"quest:del:self",
-// 		"test:quest:del:own",
-// 		"test:quest:add:own",
-// 		"test:quest:update:own",
-// 		"test:answer:read:others",
-// 	},
-
-// 	"Admin": {
-// 		"user:*",
-// 		"course:*",
-// 		"quest:*",
-// 		"test:*",
-// 		"attempt:*",
-// 		"answer:*",
-// 	},
-// }
-
 // func NewAuthModule() *AuthModule {
 // 	return &AuthModule{
 // 		authState: AuthState{
@@ -164,38 +78,31 @@
 // 	}
 // }
 
-// func createAccessToken(user User) string {
+// // ==================== JWT ФУНКЦИИ ====================
+
+// func createAccessToken(userID, login string) string {
 // 	claims := jwt.MapClaims{
-// 		"user_id":     user.ID,
-// 		"login":       user.Login,
-// 		"email":       user.Email,
-// 		"role":        user.Role,
-// 		"permissions": user.Permissions,
-// 		"exp":         time.Now().Add(1 * time.Minute).Unix(),
-// 		"type":        "access",
+// 		"user_id": userID,
+// 		"login":   login,
+// 		"exp":     time.Now().Add(1 * time.Minute).Unix(),
+// 		"type":    "access",
 // 	}
-
-// 	if user.FirstName != "" {
-// 		claims["first_name"] = user.FirstName
-// 	}
-// 	if user.LastName != "" {
-// 		claims["last_name"] = user.LastName
-// 	}
-
 // 	token, _ := jwt.NewWithClaims(jwt.SigningMethodHS256, claims).SignedString([]byte(JWT_SECRET))
 // 	return token
 // }
 
-// func createRefreshToken(user User) string {
+// func createRefreshToken(userID, login string) string {
 // 	claims := jwt.MapClaims{
-// 		"user_id": user.ID,
-// 		"login":   user.Login,
+// 		"user_id": userID,
+// 		"login":   login,
 // 		"exp":     time.Now().Add(7 * 24 * time.Hour).Unix(),
 // 		"type":    "refresh",
 // 	}
 // 	token, _ := jwt.NewWithClaims(jwt.SigningMethodHS256, claims).SignedString([]byte(JWT_SECRET))
 // 	return token
 // }
+
+// // ==================== ОБНОВЛЕННЫЙ СЕРВЕР ====================
 
 // func (am *AuthModule) StartAuthServer() {
 // 	// Эндпоинты ТЗ
@@ -204,24 +111,15 @@
 // 	http.HandleFunc("/api/auth/refresh", am.handleRefreshToken)
 // 	http.HandleFunc("/api/auth/logout", am.handleLogout)
 
+// 	// Существующие OAuth эндпоинты
 // 	http.HandleFunc("/oauth/github", am.handleGitHubOauth)
 // 	http.HandleFunc("/oauth/yandex", am.handleYandexOauth)
 
+// 	// Существующие эндпоинты
 // 	http.HandleFunc("/api/auth/status", am.handleAuthStatus)
 // 	http.HandleFunc("/api/auth/url", am.handleAuthURL)
 
-// 	http.HandleFunc("/api/user/update", am.changeusername)
-// 	http.HandleFunc("/api/user/update/other", am.changeotherusername)
-// 	http.HandleFunc("/api/user/name", am.viewothername)
-
-// 	http.HandleFunc("/api/user/viewallusers", am.viewallusers)
-
-// 	http.HandleFunc("/api/user/role", am.viewotherrole)
-// 	http.HandleFunc("/api/user/roleedit", am.editotherrole)
-
-// 	http.HandleFunc("/api/user/blocked", am.checkUserBlock)
-// 	http.HandleFunc("/api/user/blockededit", am.toggleUserBlock)
-
+// 	// Очистка старых токенов каждую минуту
 // 	go func() {
 // 		ticker := time.NewTicker(time.Minute)
 // 		for range ticker.C {
@@ -241,398 +139,9 @@
 // 	}
 // }
 
-// func (am *AuthModule) checkUserBlock(w http.ResponseWriter, r *http.Request) {
-// 	targetID := r.URL.Query().Get("ID")
+// // ==================== ЭНДПОИНТЫ ТЗ ====================
 
-// 	if targetID == "" {
-// 		http.Error(w, "ID is required", http.StatusBadRequest)
-// 		return
-// 	}
-
-// 	am.ConnectMongoDB()
-
-// 	collection := am.mongoClient.Database("App").Collection("Users")
-
-// 	filter := bson.M{"ID": targetID}
-
-// 	var user User
-// 	err := collection.FindOne(context.TODO(), filter).Decode(&user)
-// 	if err != nil {
-// 		if err == mongo.ErrNoDocuments {
-// 			http.Error(w, "User not found", http.StatusNotFound)
-// 		} else {
-// 			http.Error(w, "Database error", http.StatusInternalServerError)
-// 		}
-// 		return
-// 	}
-
-// 	response := map[string]interface{}{
-// 		"success":    true,
-// 		"user_id":    user.ID,
-// 		"is_blocked": user.IsBlocked,
-// 	}
-
-// 	w.Header().Set("Content-Type", "application/json")
-// 	json.NewEncoder(w).Encode(response)
-// }
-// func (am *AuthModule) toggleUserBlock(w http.ResponseWriter, r *http.Request) {
-// 	targetID := r.URL.Query().Get("ID")
-// 	action := r.URL.Query().Get("ACTION")
-
-// 	if targetID == "" {
-// 		http.Error(w, "ID is required", http.StatusBadRequest)
-// 		return
-// 	}
-
-// 	if action != "block" && action != "unblock" {
-// 		http.Error(w, "Action must be 'block' or 'unblock'", http.StatusBadRequest)
-// 		return
-// 	}
-
-// 	am.ConnectMongoDB()
-
-// 	collection := am.mongoClient.Database("App").Collection("Users")
-
-// 	filter := bson.M{"ID": targetID}
-
-// 	isBlocked := action == "block"
-
-// 	update := bson.M{
-// 		"$set": bson.M{"is_blocked": isBlocked},
-// 	}
-
-// 	result, err := collection.UpdateOne(context.TODO(), filter, update)
-// 	if err != nil {
-// 		log.Printf("Error updating user block status: %v", err)
-// 		http.Error(w, "Database error", http.StatusInternalServerError)
-// 		return
-// 	}
-
-// 	if result.MatchedCount == 0 {
-// 		http.Error(w, "User not found", http.StatusNotFound)
-// 		return
-// 	}
-
-// 	response := map[string]interface{}{
-// 		"success":    true,
-// 		"user_id":    targetID,
-// 		"is_blocked": isBlocked,
-// 		"action":     action,
-// 	}
-
-// 	w.Header().Set("Content-Type", "application/json")
-// 	json.NewEncoder(w).Encode(response)
-// }
-// func (am *AuthModule) editotherrole(w http.ResponseWriter, r *http.Request) {
-// 	targetID := r.URL.Query().Get("ID")
-// 	targetRole := r.URL.Query().Get("TARGET_ROLE")
-
-// 	if targetID == "" {
-// 		http.Error(w, "ID is required", http.StatusBadRequest)
-// 		return
-// 	}
-
-// 	if targetRole == "" {
-// 		http.Error(w, "TARGET_ROLE is required", http.StatusBadRequest)
-// 		return
-// 	}
-// 	if _, exists := rolesPermissions[targetRole]; !exists {
-// 		validRoles := make([]string, 0, len(rolesPermissions))
-// 		for role := range rolesPermissions {
-// 			validRoles = append(validRoles, role)
-// 		}
-// 		errorMsg := fmt.Sprintf("Invalid role: %s. Valid roles are: %v", targetRole, validRoles)
-// 		http.Error(w, errorMsg, http.StatusBadRequest)
-// 		return
-// 	}
-
-// 	am.ConnectMongoDB()
-// 	defer am.mongoClient.Disconnect(context.TODO())
-
-// 	collection := am.mongoClient.Database("App").Collection("Users")
-
-// 	filter := bson.M{"ID": targetID}
-
-// 	updateData := bson.M{
-// 		"role":        targetRole,
-// 		"permissions": rolesPermissions[targetRole],
-// 	}
-
-// 	update := bson.M{
-// 		"$set": updateData,
-// 	}
-
-// 	result, err := collection.UpdateOne(context.TODO(), filter, update)
-// 	if err != nil {
-// 		log.Printf("Error updating user role: %v", err)
-// 		http.Error(w, "Database error", http.StatusInternalServerError)
-// 		return
-// 	}
-
-// 	if result.MatchedCount == 0 {
-// 		http.Error(w, "User not found", http.StatusNotFound)
-// 		return
-// 	}
-
-// 	var updatedUser User
-// 	err = collection.FindOne(context.TODO(), filter).Decode(&updatedUser)
-// 	if err != nil {
-// 		log.Printf("Error finding updated user: %v", err)
-// 		http.Error(w, "Error retrieving updated user", http.StatusInternalServerError)
-// 		return
-// 	}
-
-// 	response := map[string]interface{}{
-// 		"success":           true,
-// 		"message":           "Role updated successfully",
-// 		"user_id":           updatedUser.ID,
-// 		"old_role":          updatedUser.Role,
-// 		"new_role":          targetRole,
-// 		"permissions":       rolesPermissions[targetRole],
-// 		"permissions_count": len(rolesPermissions[targetRole]),
-// 	}
-
-// 	newToken := createAccessToken(updatedUser)
-// 	response["new_access_token"] = newToken
-
-// 	w.Header().Set("Content-Type", "application/json")
-// 	json.NewEncoder(w).Encode(response)
-
-// 	log.Printf("Role updated for user %s: %s -> %s", targetID, updatedUser.Role, targetRole)
-// }
-
-// func (am *AuthModule) viewothername(w http.ResponseWriter, r *http.Request) {
-// 	targetID := r.URL.Query().Get("ID")
-// 	if targetID == "" {
-// 		http.Error(w, "ID is required", http.StatusBadRequest)
-// 		return
-// 	}
-
-// 	am.ConnectMongoDB()
-// 	collection := am.mongoClient.Database("App").Collection("Users")
-
-// 	filter := bson.M{"ID": targetID}
-// 	var user User
-// 	err := collection.FindOne(context.TODO(), filter).Decode(&user)
-
-// 	if err != nil {
-// 		if err == mongo.ErrNoDocuments {
-// 			http.Error(w, "User not found", http.StatusNotFound)
-// 		} else {
-// 			http.Error(w, "Database error", http.StatusInternalServerError)
-// 		}
-// 		return
-// 	}
-
-// 	fullName := fmt.Sprintf("%s %s", user.FirstName, user.LastName)
-// 	if strings.TrimSpace(fullName) == "" {
-// 		fullName = user.Login
-// 	}
-
-// 	w.Header().Set("Content-Type", "text/plain")
-// 	w.Write([]byte(fullName))
-// }
-
-// func (am *AuthModule) viewotherrole(w http.ResponseWriter, r *http.Request) {
-// 	// 1. Получаем ID пользователя, чью роль нужно посмотреть
-// 	ID := r.URL.Query().Get("ID")
-// 	if ID == "" {
-// 		http.Error(w, "ID is required", http.StatusBadRequest)
-// 		return
-// 	}
-
-// 	// 2. Проверяем авторизацию (опционально)
-// 	authHeader := r.Header.Get("Authorization")
-// 	if authHeader == "" || !strings.HasPrefix(authHeader, "Bearer ") {
-// 		http.Error(w, "Authorization required", http.StatusUnauthorized)
-// 		return
-// 	}
-
-// 	// 3. Подключаемся к MongoDB
-// 	am.ConnectMongoDB()
-
-// 	// 4. Получаем коллекцию
-// 	collection := am.mongoClient.Database("App").Collection("Users")
-
-// 	// 5. Ищем пользователя по ID
-// 	filter := bson.M{"ID": ID}
-
-// 	var user User
-// 	err := collection.FindOne(context.TODO(), filter).Decode(&user)
-
-// 	if err != nil {
-// 		if err == mongo.ErrNoDocuments {
-// 			http.Error(w, "User not found", http.StatusNotFound)
-// 		} else {
-// 			log.Printf("Error finding user: %v", err)
-// 			http.Error(w, "Database error", http.StatusInternalServerError)
-// 		}
-// 		return
-// 	}
-
-// 	// 6. Формируем ответ
-// 	response := map[string]interface{}{
-// 		"success": true,
-// 		"user_id": user.ID,
-// 		"login":   user.Login,
-// 		"role":    user.Role,
-// 	}
-
-// 	// 7. Отправляем JSON ответ
-// 	w.Header().Set("Content-Type", "application/json")
-// 	json.NewEncoder(w).Encode(response)
-
-// 	log.Printf("Returned role for user %s: %s", user.ID, user.Role)
-// }
-// func (am *AuthModule) changeusername(w http.ResponseWriter, r *http.Request) {
-// 	new_name := r.URL.Query().Get("first_name")
-// 	new_lastname := r.URL.Query().Get("last_name")
-// 	ID := r.URL.Query().Get("ID")
-
-// 	if ID == "" {
-// 		http.Error(w, "ID is required", http.StatusBadRequest)
-// 		return
-// 	}
-
-// 	if new_name == "" && new_lastname == "" {
-// 		http.Error(w, "At least first_name or last_name is required", http.StatusBadRequest)
-// 		return
-// 	}
-
-// 	am.ConnectMongoDB()
-
-// 	collection := am.mongoClient.Database("App").Collection("Users")
-
-// 	filter := bson.M{"ID": ID}
-
-// 	updateData := bson.M{}
-// 	if new_name != "" {
-// 		updateData["first_name"] = new_name
-// 	}
-// 	if new_lastname != "" {
-// 		updateData["last_name"] = new_lastname
-// 	}
-
-// 	update := bson.M{
-// 		"$set": updateData,
-// 	}
-
-// 	_, err := collection.UpdateOne(context.TODO(), filter, update)
-// 	if err != nil {
-// 		log.Printf("Error updating user: %v", err)
-// 		http.Error(w, "Database error", http.StatusInternalServerError)
-// 		return
-// 	}
-
-// 	var updatedUser User
-// 	collection.FindOne(context.TODO(), filter).Decode(&updatedUser)
-
-// 	response := map[string]interface{}{
-// 		"success": true,
-// 		"message": "Name updated successfully",
-// 		"user_id": ID,
-// 	}
-
-// 	if new_name != "" {
-// 		response["first_name"] = new_name
-// 	}
-// 	if new_lastname != "" {
-// 		response["last_name"] = new_lastname
-// 	}
-
-// 	if updatedUser.ID != "" {
-// 		newToken := createAccessToken(updatedUser)
-// 		response["new_access_token"] = newToken
-// 	}
-
-// 	w.Header().Set("Content-Type", "application/json")
-// 	json.NewEncoder(w).Encode(response)
-// }
-
-// func (am *AuthModule) changeotherusername(w http.ResponseWriter, r *http.Request) {
-// 	new_name := r.URL.Query().Get("first_name")
-// 	new_lastname := r.URL.Query().Get("last_name")
-// 	ID := r.URL.Query().Get("ID")
-
-// 	if ID == "" {
-// 		http.Error(w, "ID is required", http.StatusBadRequest)
-// 		return
-// 	}
-
-// 	if new_name == "" && new_lastname == "" {
-// 		http.Error(w, "At least first_name or last_name is required", http.StatusBadRequest)
-// 		return
-// 	}
-
-// 	am.ConnectMongoDB()
-
-// 	collection := am.mongoClient.Database("App").Collection("Users")
-
-// 	filter := bson.M{"ID": ID}
-
-// 	updateData := bson.M{}
-// 	if new_name != "" {
-// 		updateData["first_name"] = new_name
-// 	}
-// 	if new_lastname != "" {
-// 		updateData["last_name"] = new_lastname
-// 	}
-
-// 	update := bson.M{
-// 		"$set": updateData,
-// 	}
-
-// 	_, err := collection.UpdateOne(context.TODO(), filter, update)
-// 	if err != nil {
-// 		log.Printf("Error updating user: %v", err)
-// 		http.Error(w, "Database error", http.StatusInternalServerError)
-// 		return
-// 	}
-// }
-// func (am *AuthModule) viewallusers(w http.ResponseWriter, r *http.Request) {
-// 	am.ConnectMongoDB()
-// 	collection := am.mongoClient.Database("App").Collection("Users")
-
-// 	filter := bson.M{}
-
-// 	cursor, err := collection.Find(context.TODO(), filter)
-// 	if err != nil {
-// 		log.Printf("Error finding users: %v", err)
-// 		http.Error(w, "Database error", http.StatusInternalServerError)
-// 		return
-// 	}
-// 	defer cursor.Close(context.TODO())
-
-// 	var users []User
-// 	for cursor.Next(context.TODO()) {
-// 		var user User
-// 		if err := cursor.Decode(&user); err != nil {
-// 			log.Printf("Error decoding user: %v", err)
-// 			continue
-// 		}
-// 		users = append(users, user)
-// 	}
-
-// 	var response []map[string]interface{}
-// 	for _, user := range users {
-// 		response = append(response, map[string]interface{}{
-// 			"id":         user.ID,
-// 			"login":      user.Login,
-// 			"email":      user.Email,
-// 			"first_name": user.FirstName,
-// 			"last_name":  user.LastName,
-// 			"role":       user.Role,
-// 			"type":       user.Type,
-// 		})
-// 	}
-
-// 	w.Header().Set("Content-Type", "application/json")
-// 	json.NewEncoder(w).Encode(map[string]interface{}{
-// 		"success": true,
-// 		"count":   len(users),
-// 		"users":   response,
-// 	})
-// }
+// // GET /api/auth/init?type=github&login_token=abc123
 // func (am *AuthModule) handleInitAuth(w http.ResponseWriter, r *http.Request) {
 // 	authType := r.URL.Query().Get("type")
 // 	loginToken := r.URL.Query().Get("login_token")
@@ -642,6 +151,7 @@
 // 		return
 // 	}
 
+// 	// Сохраняем токен входа на 5 минут
 // 	am.authState.tokensMutex.Lock()
 // 	am.authState.loginTokens[loginToken] = LoginToken{
 // 		CreatedAt: time.Now(),
@@ -673,7 +183,9 @@
 // 	json.NewEncoder(w).Encode(response)
 // }
 
+// // GET /api/auth/check/{login_token}
 // func (am *AuthModule) handleCheckAuth(w http.ResponseWriter, r *http.Request) {
+// 	// Извлекаем токен из URL: /api/auth/check/abc123
 // 	pathParts := strings.Split(r.URL.Path, "/")
 // 	if len(pathParts) < 4 {
 // 		http.Error(w, "Неверный URL", http.StatusBadRequest)
@@ -685,6 +197,7 @@
 // 	state, exists := am.authState.loginTokens[loginToken]
 // 	am.authState.tokensMutex.RUnlock()
 
+// 	// Проверяем таймаут 5 минут
 // 	if !exists || time.Since(state.CreatedAt) > 5*time.Minute {
 // 		if exists {
 // 			am.authState.tokensMutex.Lock()
@@ -705,6 +218,7 @@
 // 	json.NewEncoder(w).Encode(response)
 // }
 
+// // POST /api/auth/refresh
 // func (am *AuthModule) handleRefreshToken(w http.ResponseWriter, r *http.Request) {
 // 	var req struct {
 // 		RefreshToken string `json:"refresh_token"`
@@ -715,6 +229,7 @@
 // 		return
 // 	}
 
+// 	// Проверяем refresh token
 // 	token, err := jwt.Parse(req.RefreshToken, func(t *jwt.Token) (interface{}, error) {
 // 		return []byte(JWT_SECRET), nil
 // 	})
@@ -731,21 +246,23 @@
 // 	}
 
 // 	userID := claims["user_id"].(string)
+// 	login := claims["login"].(string)
 
+// 	// Проверяем, что токен есть в базе
 // 	collection := am.mongoClient.Database("App").Collection("Users")
-
-// 	var user User
-// 	err = collection.FindOne(context.TODO(), bson.M{
+// 	filter := bson.M{
 // 		"ID":             userID,
 // 		"refresh_tokens": req.RefreshToken,
-// 	}).Decode(&user)
+// 	}
 
-// 	if err != nil {
+// 	var user bson.M
+// 	if collection.FindOne(context.TODO(), filter).Decode(&user) != nil {
 // 		http.Error(w, "Refresh token не найден", http.StatusUnauthorized)
 // 		return
 // 	}
 
-// 	newAccessToken := createAccessToken(user)
+// 	// Генерируем новый access token
+// 	newAccessToken := createAccessToken(userID, login)
 
 // 	response := map[string]string{
 // 		"access_token": newAccessToken,
@@ -755,6 +272,7 @@
 // 	json.NewEncoder(w).Encode(response)
 // }
 
+// // POST /api/auth/logout
 // func (am *AuthModule) handleLogout(w http.ResponseWriter, r *http.Request) {
 // 	allDevices := r.URL.Query().Get("all") == "true"
 
@@ -767,6 +285,7 @@
 // 		return
 // 	}
 
+// 	// Проверяем токен
 // 	token, err := jwt.Parse(req.RefreshToken, func(t *jwt.Token) (interface{}, error) {
 // 		return []byte(JWT_SECRET), nil
 // 	})
@@ -786,9 +305,11 @@
 // 	collection := am.mongoClient.Database("App").Collection("Users")
 
 // 	if allDevices {
+// 		// Удаляем все refresh tokens пользователя
 // 		update := bson.M{"$set": bson.M{"refresh_tokens": []string{}}}
 // 		collection.UpdateOne(context.TODO(), bson.M{"ID": userID}, update)
 // 	} else {
+// 		// Удаляем только указанный токен
 // 		update := bson.M{"$pull": bson.M{"refresh_tokens": req.RefreshToken}}
 // 		collection.UpdateOne(context.TODO(), bson.M{"ID": userID}, update)
 // 	}
@@ -800,11 +321,14 @@
 // 	json.NewEncoder(w).Encode(response)
 // }
 
+// // ==================== ОБНОВЛЕННЫЕ OAuth ОБРАБОТЧИКИ ====================
+
 // func (am *AuthModule) handleGitHubOauth(w http.ResponseWriter, r *http.Request) {
 // 	state := r.URL.Query().Get("state")
 // 	code := r.URL.Query().Get("code")
 // 	errorMsg := r.URL.Query().Get("error")
 
+// 	// Проверяем токен входа
 // 	am.authState.tokensMutex.RLock()
 // 	loginState, exists := am.authState.loginTokens[state]
 // 	am.authState.tokensMutex.RUnlock()
@@ -815,6 +339,7 @@
 // 	}
 
 // 	if errorMsg != "" {
+// 		// Пользователь отказался
 // 		am.authState.tokensMutex.Lock()
 // 		am.authState.loginTokens[state] = LoginToken{
 // 			CreatedAt: loginState.CreatedAt,
@@ -822,7 +347,7 @@
 // 		}
 // 		am.authState.tokensMutex.Unlock()
 
-// 		http.Redirect(w, r, "http://localhost:3001/api/auth/confirm?state=%s&user=%s", http.StatusSeeOther)
+// 		http.Redirect(w, r, "http://localhost:5173?auth=denied", http.StatusSeeOther)
 // 		return
 // 	}
 
@@ -833,6 +358,7 @@
 // 		am.authState.Type = "github"
 // 		am.authState.mu.Unlock()
 
+// 		// Получаем токен и данные пользователя
 // 		accessToken := am.getGitHubAccessToken(code)
 // 		if accessToken == "" {
 // 			http.Error(w, "Не удалось получить токен доступа", http.StatusInternalServerError)
@@ -845,34 +371,22 @@
 // 			return
 // 		}
 
+// 		// Сохраняем пользователя
 // 		userID := fmt.Sprintf("github_%d", userData.ID)
-
-// 		defaultRole := "Student"
-// 		permissions := rolesPermissions[defaultRole]
-
-// 		user := User{
-// 			ID:            userID,
-// 			Login:         userData.Login,
-// 			Email:         userData.Email,
-// 			FirstName:     "",
-// 			LastName:      "",
-// 			Type:          "github",
-// 			Role:          defaultRole,
-// 			Permissions:   permissions,
-// 			RefreshTokens: []string{},
-// 			CreatedAt:     time.Now(),
-// 		}
-// 		if err := am.saveUserWithTokens(user); err != nil {
+// 		if err := am.saveUserWithTokens(userData.Login, userID, "github"); err != nil {
 // 			log.Printf("Ошибка сохранения пользователя: %v", err)
 // 		}
 
-// 		accessTokenJWT := createAccessToken(user)
-// 		refreshTokenJWT := createRefreshToken(user)
+// 		// Генерируем JWT токены
+// 		accessTokenJWT := createAccessToken(userID, userData.Login)
+// 		refreshTokenJWT := createRefreshToken(userID, userData.Login)
 
+// 		// Сохраняем refresh token в MongoDB
 // 		collection := am.mongoClient.Database("App").Collection("Users")
 // 		update := bson.M{"$addToSet": bson.M{"refresh_tokens": refreshTokenJWT}}
 // 		collection.UpdateOne(context.TODO(), bson.M{"ID": userID}, update)
 
+// 		// Обновляем статус токена входа
 // 		am.authState.tokensMutex.Lock()
 // 		am.authState.loginTokens[state] = LoginToken{
 // 			CreatedAt:    loginState.CreatedAt,
@@ -885,7 +399,13 @@
 
 // 		go notifyNodeAuth(state, userData.Login)
 
-// 		http.Redirect(w, r, "http://localhost:3001/api/auth/confirm?state=%s&user=%s", http.StatusSeeOther)
+// 		// Перенаправляем на страницу успеха
+// 		redirectURL := fmt.Sprintf(
+// 			"http://localhost/api/auth/confirm?state=%s&user=%s",
+// 			state,
+// 			url.QueryEscape(userData.Login),
+// 		)
+// 		http.Redirect(w, r, redirectURL, http.StatusSeeOther)
 
 // 	} else {
 // 		http.Error(w, "Код авторизации не получен", http.StatusBadRequest)
@@ -897,6 +417,7 @@
 // 	code := r.URL.Query().Get("code")
 // 	errorMsg := r.URL.Query().Get("error")
 
+// 	// Проверяем токен входа
 // 	am.authState.tokensMutex.RLock()
 // 	loginState, exists := am.authState.loginTokens[state]
 // 	am.authState.tokensMutex.RUnlock()
@@ -907,6 +428,7 @@
 // 	}
 
 // 	if errorMsg != "" {
+// 		// Пользователь отказался
 // 		am.authState.tokensMutex.Lock()
 // 		am.authState.loginTokens[state] = LoginToken{
 // 			CreatedAt: loginState.CreatedAt,
@@ -914,7 +436,7 @@
 // 		}
 // 		am.authState.tokensMutex.Unlock()
 
-// 		http.Redirect(w, r, "http://localhost:3001/api/auth/confirm?state=%s&user=%s", http.StatusSeeOther)
+// 		http.Redirect(w, r, "http://localhost:5173?auth=denied", http.StatusSeeOther)
 // 		return
 // 	}
 
@@ -925,47 +447,36 @@
 // 		am.authState.Type = "yandex"
 // 		am.authState.mu.Unlock()
 
+// 		// Получаем токен доступа
 // 		accessToken, err := am.getYandexAccessToken(code)
 // 		if err != nil {
 // 			http.Error(w, "Не удалось получить токен доступа Яндекс", http.StatusInternalServerError)
 // 			return
 // 		}
 
+// 		// Получаем данные пользователя
 // 		userData, err := am.getYandexUserInfo(accessToken)
 // 		if err != nil {
 // 			http.Error(w, "Не удалось получить данные пользователя Яндекс", http.StatusInternalServerError)
 // 			return
 // 		}
 
+// 		// Сохраняем пользователя
 // 		userID := fmt.Sprintf("yandex_%s", userData.ID)
-
-// 		defaultRole := "Student"
-// 		permissions := rolesPermissions[defaultRole]
-
-// 		user := User{
-// 			ID:            userID,
-// 			Login:         userData.Login,
-// 			Email:         userData.DefaultEmail,
-// 			FirstName:     "",
-// 			LastName:      "",
-// 			Type:          "yandex",
-// 			Role:          defaultRole,
-// 			Permissions:   permissions,
-// 			RefreshTokens: []string{},
-// 			CreatedAt:     time.Now(),
-// 		}
-
-// 		if err := am.saveUserWithTokens(user); err != nil {
+// 		if err := am.saveUserWithTokens(userData.Login, userID, "yandex"); err != nil {
 // 			log.Printf("Ошибка сохранения пользователя: %v", err)
 // 		}
 
-// 		accessTokenJWT := createAccessToken(user)
-// 		refreshTokenJWT := createRefreshToken(user)
+// 		// Генерируем JWT токены
+// 		accessTokenJWT := createAccessToken(userID, userData.Login)
+// 		refreshTokenJWT := createRefreshToken(userID, userData.Login)
 
+// 		// Сохраняем refresh token в MongoDB
 // 		collection := am.mongoClient.Database("App").Collection("Users")
 // 		update := bson.M{"$addToSet": bson.M{"refresh_tokens": refreshTokenJWT}}
 // 		collection.UpdateOne(context.TODO(), bson.M{"ID": userID}, update)
 
+// 		// Обновляем статус токена входа
 // 		am.authState.tokensMutex.Lock()
 // 		am.authState.loginTokens[state] = LoginToken{
 // 			CreatedAt:    loginState.CreatedAt,
@@ -978,36 +489,42 @@
 
 // 		go notifyNodeAuth(state, userData.Login)
 
-// 		http.Redirect(w, r, "http://localhost:3001/api/auth/confirm?state=%s&user=%s", http.StatusSeeOther)
+// 		// Перенаправляем на страницу успеха
+// 		redirectURL := fmt.Sprintf(
+// 			"http://localhost/api/auth/confirm?state=%s&user=%s",
+// 			state,
+// 			url.QueryEscape(userData.Login),
+// 		)
+// 		http.Redirect(w, r, redirectURL, http.StatusSeeOther)
 // 	} else {
 // 		http.Error(w, "Код авторизации не получен", http.StatusBadRequest)
 // 	}
 // }
-// func (am *AuthModule) saveUserWithTokens(user User) error {
+
+// // ==================== ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ ====================
+
+// func (am *AuthModule) saveUserWithTokens(login, userID, provider string) error {
 // 	if am.mongoClient == nil {
 // 		return fmt.Errorf("MongoDB клиент не инициализирован")
 // 	}
 
 // 	collection := am.mongoClient.Database("App").Collection("Users")
 
+// 	// Создаём пользователя с полем для refresh токенов
+// 	userDoc := bson.M{
+// 		"ID":             userID,
+// 		"Login":          login,
+// 		"Access":         "Student",
+// 		"Type":           provider,
+// 		"refresh_tokens": []string{}, // Добавляем поле для хранения refresh токенов
+// 	}
+
+// 	// Используем upsert (создаём если нет, обновляем если есть)
 // 	opts := options.Update().SetUpsert(true)
 // 	_, err := collection.UpdateOne(
 // 		context.TODO(),
-// 		bson.M{"ID": user.ID},
-// 		bson.M{
-// 			"$setOnInsert": bson.M{
-// 				"ID":             user.ID,
-// 				"Login":          user.Login,
-// 				"Email":          user.Email,
-// 				"FirstName":      user.FirstName,
-// 				"LastName":       user.LastName,
-// 				"Type":           user.Type,
-// 				"Role":           user.Role,
-// 				"Permissions":    user.Permissions,
-// 				"refresh_tokens": []string{},
-// 				"CreatedAt":      time.Now(),
-// 			},
-// 		},
+// 		bson.M{"ID": userID},
+// 		bson.M{"$setOnInsert": userDoc},
 // 		opts,
 // 	)
 
@@ -1015,9 +532,11 @@
 // 		return fmt.Errorf("ошибка сохранения пользователя: %v", err)
 // 	}
 
-// 	log.Printf("Пользователь %s (%s) обновлён в MongoDB", user.Login, user.Type)
+// 	log.Printf("Пользователь %s (%s) обновлён в MongoDB", login, provider)
 // 	return nil
 // }
+
+// // ==================== ВАШ СУЩЕСТВУЮЩИЙ КОД (остаётся без изменений) ====================
 
 // func (am *AuthModule) ConnectMongoDB() error {
 // 	client, err := mongo.Connect(context.TODO(), options.Client().ApplyURI(MONGODB_URI))
@@ -1077,7 +596,7 @@
 // 			url.QueryEscape(YANDEX_CALLBACK_URL),
 // 		)
 // 		TypeName = "Яндекс"
-// 	default:
+// 	default: // github по умолчанию
 // 		authURL = fmt.Sprintf(
 // 			"https://github.com/login/oauth/authorize?client_id=%s&redirect_uri=%s&scope=user",
 // 			GITHUB_CLIENT_ID,
@@ -1300,12 +819,15 @@
 // func main() {
 // 	authModule := NewAuthModule()
 
+// 	// Подключаемся к MongoDB
 // 	if err := authModule.ConnectMongoDB(); err != nil {
 // 		log.Fatalf("Ошибка подключения к MongoDB: %v", err)
 // 	}
 // 	defer authModule.DisconnectMongoDB()
 
+// 	// Запускаем сервер авторизации
 // 	go authModule.StartAuthServer()
 
+// 	// Ожидаем авторизации (CLI режим)
 // 	authModule.WaitForAuthCLI()
 // }
