@@ -6,6 +6,7 @@ import Dashboard from './components/Dashboard';
 function App() {
   const [view, setView] = useState('auth');
   const [user, setUser] = useState(null);
+  const [loading, setLoading] = useState(true);
   const [debugStatus, setDebugStatus] = useState('unknown');
 
   const handleLogout = async (all = false) => {
@@ -24,28 +25,43 @@ function App() {
   useEffect(() => {
     const checkAuth = async () => {
       try {
-        const res = await fetch('/api/auth/status', { credentials: 'include' });
-        if (res.ok) {
-          const data = await res.json();
-          setDebugStatus(data.status);
+        const res = await fetch('/api/auth/status');
+        const data = await res.json();
 
-          if (data.status === 'Authorized') {
-            setUser({ fullName: data.userName || 'Студент' });
-            setView('dashboard');
-          } else {
-            setUser(null);
-            setView('auth');
+        if (data.status === 'Authorized') {
+          const nameRes = await fetch('/api/user/me');
+          const fullNameFromCpp = await nameRes.text();
+
+          // ЛОГИКА: 
+          // 1. Если C++ вернул "ERROR..." (например, юзера нет в базе C++)
+          // 2. ИЛИ если C++ вернул пустую строку
+          // ТОГДА берем имя из Redis (data.userName - то, что пришло от Яндекса)
+          // ИНАЧЕ берем то, что вернул C++
+
+          let finalName = data.userName; // По умолчанию берем из авторизации (Яндекс)
+
+          if (!fullNameFromCpp.includes("ERROR") && fullNameFromCpp.trim() !== "") {
+            finalName = fullNameFromCpp;
+          }
+
+          setUser({
+            fullName: finalName,
+            role: data.role
+          });
+          setView('dashboard');
           }
         }
-      } catch (err) {
-        console.error("Ошибка связи:", err);
+        catch (err) { console.error("Ошибка авторизации:", err); }
+      finally {
+        setLoading(false); // <--- ДОБАВИЛИ: Убираем экран загрузки
       }
     };
-
     checkAuth();
-    const interval = setInterval(checkAuth, 2000);
-    return () => clearInterval(interval);
   }, []);
+
+  if (loading) {
+    return <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '100vh' }}>Загрузка...</div>;
+  }
 
   return (
     <div className="App">

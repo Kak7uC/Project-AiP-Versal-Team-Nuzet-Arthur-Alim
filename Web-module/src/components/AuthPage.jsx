@@ -30,10 +30,8 @@ export default function AuthPage() {
 					Войти через Яндекс
 				</button>
 
-				<div style={{ margin: '20px 0', textAlign: 'center', color: '#6b7280' }}>Или по коду</div>
-
-				<input type="text" className="input-field" placeholder="Введите код" />
-				<button className="btn btn-primary">Подтвердить код</button>
+				<button onClick={() => startLogin('code')} className="btn btn-code">
+					Войти по коду</button>
 
 				<div style={{ marginTop: '20px', textAlign: 'center' }}>
 					<a href="https://web.telegram.org/k/#@versal_test_bot" style={{ color: '#4f46e5' }}>Перейти в Telegram</a>
