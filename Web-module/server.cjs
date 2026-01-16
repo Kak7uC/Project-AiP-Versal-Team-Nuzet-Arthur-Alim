@@ -461,10 +461,43 @@ app.post('/api/course/create', async (req, res) => {
 });
 
 // 2. Получить список ВСЕХ курсов (ЭТОГО НЕ БЫЛО - нужно для Админа)
-app.get('/api/courses/all', (req, res) =>
-	callCpp('VIEW_ALL_COURSES', {}, req)
-		.then(r => res.status(r.status).send(r.body))
-);
+// 2. Получить ВСЕ курсы + ТЕСТЫ к ним (Исправление отображения тестов)
+app.get('/api/courses/all', async (req, res) => {
+	try {
+		// 1. Сначала просим у C++ список курсов
+		const coursesRes = await callCpp('VIEW_ALL_COURSES', {}, req);
+
+		// Если ошибка или пусто - отдаем как есть
+		if (coursesRes.status !== 200) return res.status(coursesRes.status).send(coursesRes.body);
+
+		const coursesData = JSON.parse(coursesRes.body);
+		if (!coursesData.courses) return res.json({ courses: [] });
+
+		// 2. Теперь для КАЖДОГО курса запрашиваем список тестов (параллельно)
+		const coursesWithTests = await Promise.all(coursesData.courses.map(async (course) => {
+			// Вызываем VIEW_COURSE_TESTS для конкретного курса
+			const testsRes = await callCpp('VIEW_COURSE_TESTS', { Course_ID: course.id }, req);
+			let tests = [];
+
+			try {
+				const testsData = JSON.parse(testsRes.body);
+				if (testsData.tests) tests = testsData.tests;
+			} catch (e) {
+				// Если тестов нет или ошибка парсинга - просто пустой массив
+			}
+
+			// Возвращаем курс уже с массивом тестов
+			return { ...course, tests };
+		}));
+
+		// 3. Отправляем полный пакет на фронтенд
+		res.json({ courses: coursesWithTests });
+
+	} catch (e) {
+		console.error("Error fetching courses with tests:", e);
+		res.status(500).json({ error: "Server Error" });
+	}
+});
 
 // --- УЛУЧШЕННЫЙ БЛОК API (Вставь перед app.listen) ---
 

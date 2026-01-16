@@ -18,6 +18,21 @@ const QuestionView = ({ testName, questions, onFinish, onCancel }) => {
 		});
 	};
 
+
+	if (!questions || questions.length === 0) {
+		return (
+			<div style={styles.overlay}>
+				<div style={styles.testCard}>
+					<div style={{ padding: '40px', textAlign: 'center' }}>
+						<h3>Ошибка загрузки теста</h3>
+						<p>В этом тесте нет вопросов или они не загрузились.</p>
+						<button onClick={onCancel} style={styles.exitBtn}>Закрыть</button>
+					</div>
+				</div>
+			</div>
+		);
+	}
+
 	// Переход вперед / Завершение
 	const handleNext = () => {
 		if (isLastQuestion) {
@@ -35,6 +50,8 @@ const QuestionView = ({ testName, questions, onFinish, onCancel }) => {
 	};
 
 	return (
+
+		
 		<div style={styles.overlay}>
 			<div style={styles.testCard}>
 				{/* Шапка теста */}

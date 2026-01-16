@@ -14,11 +14,10 @@ const Dashboard = ({ user, onLogout }) => {
 	const [newName, setNewName] = useState({ first: '', last: '' });
 	const [isLoading, setIsLoading] = useState(false);
 
-	const isAdmin = true //user?.role === 'Admin';
-	const isTeacher = true //user?.role === 'Teacher';
-	const isStudent = false  //user?.role === 'Student' || (!isAdmin && !isTeacher); НУЖНО БУДЕТ ПОТОМ ИСПРАВИТЬ!!!!!!!!!
+	const isAdmin = true //user?.role === 'Администратор';
+	const isTeacher = false //user?.role === 'Учитель';
+	const isStudent = false //user?.role === 'Студент' || (!isAdmin && !isTeacher);
 
-	// --- 1. ЗАГРУЗКА КУРСОВ (При открытии вкладки "home") ---
 	// --- 1. ЗАГРУЗКА КУРСОВ ---
 	useEffect(() => {
 		if (activeTab === 'home') {
@@ -34,8 +33,6 @@ const Dashboard = ({ user, onLogout }) => {
 						const data = await res.json();
 						console.log("📦 Курсы:", data);
 
-						// C++ VIEW_OWN_DATA возвращает { courses: [...] }
-						// C++ VIEW_ALL_COURSES тоже возвращает { courses: [...] }
 						if (data.courses) setCourses(data.courses);
 						else setCourses([]);
 					}
@@ -47,7 +44,7 @@ const Dashboard = ({ user, onLogout }) => {
 		}
 	}, [activeTab, isAdmin, isTeacher]);
 
-	// --- 2. ЗАГРУЗКА ПОЛЬЗОВАТЕЛЕЙ (При открытии вкладки "users") ---
+	// --- 2. ЗАГРУЗКА ПОЛЬЗОВАТЕЛЕЙ
 	useEffect(() => {
 		if (activeTab === 'users' && isAdmin) {
 			const fetchUsers = async () => {
@@ -131,6 +128,122 @@ const Dashboard = ({ user, onLogout }) => {
 		}
 	};
 
+	// --- ФУНКЦИЯ РЕДАКТИРОВАНИЯ КУРСА ---
+	const handleEditCourse = async (courseId, currentName, currentDesc) => {
+		const newName = prompt("Новое название курса:", currentName);
+		if (newName === null) return;
+
+		const newDesc = prompt("Новое описание:", currentDesc);
+
+		setIsLoading(true);
+		try {
+			const res = await fetch('/api/course/edit', {
+				method: 'POST',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify({
+					courseId: courseId,
+					name: newName || currentName,
+					description: newDesc !== null ? newDesc : currentDesc
+				})
+			});
+
+			// Читаем как текст, чтобы не падать на JSON.parse
+			const text = await res.text();
+			console.log("Ответ сервера при редактировании:", text);
+
+			// Если статус 200 - считаем успехом, даже если JSON кривой
+			if (res.ok) {
+				alert("Курс обновлен!");
+				fetchCourses();
+			} else {
+				alert("Ошибка сервера: " + text);
+			}
+		} catch (e) {
+			console.error(e);
+			alert("Ошибка сети (проверьте консоль)");
+		} finally {
+			setIsLoading(false);
+		}
+	};
+
+	const handleDeleteCourse = async (courseId) => {
+		if (!confirm("Вы уверены? Курс и все тесты будут удалены.")) return;
+		setIsLoading(true);
+		try {
+			await fetch('/api/course/delete', {
+				method: 'POST',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify({ courseId })
+			});
+			// Обновляем список
+			const endpoint = (isAdmin || isTeacher) ? '/api/courses/all' : '/api/student/dashboard';
+			const res = await fetch(endpoint);
+			const data = await res.json();
+			if (data.courses) setCourses(data.courses);
+		} catch (e) {
+			alert("Ошибка удаления");
+		} finally {
+			setIsLoading(false);
+		}
+	};
+
+	const handleEditCourseSave = async (courseId, name, description) => {
+		setIsLoading(true);
+		try {
+			await fetch('/api/course/edit', {
+				method: 'POST', headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify({ courseId, name, description })
+			});
+			setEditingCourse(null);
+			fetchCourses();
+		} catch (e) { alert("Ошибка сохранения"); } finally { setIsLoading(false); }
+	};
+
+	// --- ДЕЙСТВИЯ С ТЕСТАМИ ---
+
+	const handleDeleteTest = async (courseId, testId) => {
+		if (!confirm("Удалить этот тест?")) return;
+		setIsLoading(true);
+		try {
+			await fetch('/api/test/delete', {
+				method: 'POST',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify({ courseId, testId })
+			});
+			// Обновляем список (просто перезагружаем курсы)
+			const endpoint = (isAdmin || isTeacher) ? '/api/courses/all' : '/api/student/dashboard';
+			const res = await fetch(endpoint);
+			const data = await res.json();
+			if (data.courses) setCourses(data.courses);
+		} catch (e) {
+			alert("Ошибка удаления теста");
+		} finally {
+			setIsLoading(false);
+		}
+	};
+
+	const handleSaveNewTest = async (testData) => {
+		setIsLoading(true);
+		try {
+			const res = await fetch('/api/test/create-full', {
+				method: 'POST', headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify({
+					courseId: isCreatingTest.courseId,
+					title: testData.title,
+					questions: testData.questions
+				})
+			});
+			const data = await res.json();
+			if (data.status === 'success' || data.test_id) {
+				alert("Тест создан!");
+				setIsCreatingTest(null);
+				fetchCourses();
+			} else {
+				alert("Ошибка: " + JSON.stringify(data));
+			}
+		} catch (e) { alert("Ошибка сети"); } finally { setIsLoading(false); }
+	};
+
 	const handleSaveTest = async (testData) => {
 		setIsLoading(true);
 		try {
@@ -160,8 +273,17 @@ const Dashboard = ({ user, onLogout }) => {
 		}
 	};
 
-	// Заменяем старую функцию-заглушку на реальную
-	const handleStartTest = async (testId, testName) => {
+	// --- ЗАПУСК ТЕСТА (ИСПРАВЛЕННАЯ) ---
+	const handleStartTest = async (rawTestId, testName) => {
+		// Защита: Убедимся, что ID это строка и без пробелов
+		const testId = String(rawTestId).trim();
+
+		console.log("🚀 Попытка запуска теста. ID:", testId); // <--- СМОТРИ СЮДА В КОНСОЛЬ
+
+		if (!testId || testId === "undefined") {
+			return alert("Ошибка: Некорректный ID теста. Попробуйте обновить страницу.");
+		}
+
 		setIsLoading(true);
 		try {
 			// 1. Создаем попытку в БД
@@ -173,43 +295,33 @@ const Dashboard = ({ user, onLogout }) => {
 			const startData = await startRes.json();
 
 			if (startData.error) {
-				alert("Ошибка старта: " + startData.error);
+				console.error("Ошибка от сервера:", startData);
+				alert("Ошибка запуска: " + startData.error);
 				return;
 			}
 
+			// ... Остальной код получения вопросов без изменений ...
 			const attemptId = startData.attempt_id;
-
-			// 2. Нам нужно получить список вопросов для этой попытки.
-			// В твоем C++ есть VIEW_ATTEMPT, который возвращает { answers: [ {question_id, ...} ] }
-			// Используем прямой вызов через прокси (так как отдельный роут мы не делали, используем универсальный подход если есть, или добавим)
-			// ПРИМЕЧАНИЕ: Я использую callCpp через GET запрос вручную, так как в server.cjs мы не добавили route для VIEW_ATTEMPT
-			// Давай добавим роут VIEW_ATTEMPT в server.cjs следующим шагом, а пока код фронта:
-
-			const attemptInfoRes = await fetch(`/api/proxy/attempt?id=${testId}`); // Мы сейчас добавим этот роут
+			const attemptInfoRes = await fetch(`/api/proxy/attempt?id=${testId}`);
 			const attemptInfo = await attemptInfoRes.json();
 
 			if (!attemptInfo.answers) {
-				alert("Ошибка: не удалось получить вопросы теста");
+				alert("Ошибка: вопросы не загрузились (пустой список)");
 				return;
 			}
 
-			// 3. Скачиваем тексты вопросов (так как VIEW_ATTEMPT возвращает только ID)
 			const questionsWithText = await Promise.all(attemptInfo.answers.map(async (ans) => {
-				// ans.question_id
-				// По умолчанию версия 1, если API не возвращает версию
 				const qRes = await fetch(`/api/test/question?id=${ans.question_id}&version=1`);
 				const qData = await qRes.json();
-
 				return {
 					id: ans.question_id,
-					text: qData.question_text || "Текст не загружен",
+					text: qData.question_text || "Текст вопроса не найден",
 					options: qData.options || [],
 					version: "1",
-					initialAnswer: ans.answer_index // Если мы продолжили старый тест
+					initialAnswer: ans.answer_index
 				};
 			}));
 
-			// Запускаем интерфейс теста
 			setStartedTest({
 				name: testName,
 				questions: questionsWithText,
@@ -218,53 +330,89 @@ const Dashboard = ({ user, onLogout }) => {
 
 		} catch (e) {
 			console.error(e);
-			alert("Ошибка при запуске теста. Проверьте консоль.");
+			alert("Сбой запуска теста (см. консоль)");
 		} finally {
 			setIsLoading(false);
 		}
 	};
 
 	// Компонент карточки курса (Адаптирован под данные из БД)
+	// Компонент карточки курса (ОБНОВЛЕННЫЙ)
 	const CourseCard = ({ course }) => (
 		<div style={styles.courseCard}>
-			{/* ВСТАВИТЬ СЮДА: Кнопка добавления теста */}
-			{(isTeacher || isAdmin) && (
-				<button
-					style={{ ...styles.outlineBtn, marginTop: '10px', width: '100%' }}
-					onClick={() => setIsCreatingTest({
-						courseId: course.course_id || course.id,
-						courseName: course.course_name || course.name
-					})}
-				>
-					+ Добавить тест
-				</button>
-			)}
-			<div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '15px' }}>
+			<div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '10px' }}>
 				<span style={{ fontSize: '32px' }}>📚</span>
 				{(isAdmin || isTeacher) && (
 					<div style={{ display: 'flex', gap: '8px' }}>
-						<button title="Редактировать" style={styles.iconBtn}>✏️</button>
+						{/* Кнопка РЕДАКТИРОВАТЬ (пока просто алерт, или сделай prompt как для создания) */}
+						<button
+							title="Редактировать курс"
+							style={styles.iconBtn}
+							onClick={() => handleEditCourse(
+								course.course_id || course.id,
+								course.course_name || course.name,
+								course.description
+							)}
+						>
+							✏️
+						</button>
+
+						{/* Кнопка УДАЛИТЬ КУРС (Новая) */}
+						<button
+							title="Удалить курс"
+							style={{ ...styles.iconBtn, backgroundColor: '#fee2e2', color: 'red' }}
+							onClick={() => handleDeleteCourse(course.course_id || course.id)}
+						>🗑️</button>
 					</div>
 				)}
 			</div>
-			{/* В C++ поле называется course_name, а не name */}
-			<h4 style={styles.courseTitle}>{course.course_name || course.name}</h4>
+
+			<h4 style={styles.courseTitle}>{course.course_name || course.name || "Без названия"}</h4>
 			<p style={styles.courseDesc}>{course.description || "Нет описания"}</p>
 
-			<div style={{ marginTop: 'auto', display: 'flex', flexDirection: 'column', gap: '10px' }}>
-				{/* Если пришли тесты из БД */}
+			<div style={{ marginTop: 'auto', display: 'flex', flexDirection: 'column', gap: '8px' }}>
+				{/* Список тестов */}
 				{course.tests && course.tests.length > 0 ? (
 					course.tests.map(test => (
-						<button
-							key={test.test_id}
-							style={styles.primaryBtn}
-							onClick={() => handleStartTest(test.test_id, test.test_title)}
-						>
-							Тест: {test.test_title}
-						</button>
+						<div key={test.test_id || test.id} style={{ display: 'flex', gap: '5px' }}>
+							{/* Кнопка запуска теста (Исправлены ID и Title) */}
+							<button
+								style={{ ...styles.primaryBtn, marginBottom: 0 }}
+								onClick={() => handleStartTest(test.test_id || test.id, test.test_title || test.title)}
+							>
+								📝 {test.test_title || test.title || "Тест"}
+							</button>
+
+							{/* Кнопка удаления теста (Новая) */}
+							{(isAdmin || isTeacher) && (
+								<button
+									style={{
+										width: '40px', backgroundColor: '#fee2e2', color: 'red', border: 'none',
+										borderRadius: '8px', cursor: 'pointer', fontWeight: 'bold'
+									}}
+									onClick={() => handleDeleteTest(course.course_id || course.id, test.test_id || test.id)}
+									title="Удалить тест"
+								>
+									✕
+								</button>
+							)}
+						</div>
 					))
 				) : (
-					<div style={{ color: '#999', fontSize: '13px' }}>Нет доступных тестов</div>
+					<div style={{ color: '#999', fontSize: '13px', fontStyle: 'italic' }}>Нет тестов</div>
+				)}
+
+				{/* Кнопка добавления теста */}
+				{(isTeacher || isAdmin) && (
+					<button
+						style={{ ...styles.outlineBtn, marginTop: '10px', width: '100%' }}
+						onClick={() => setIsCreatingTest({
+							courseId: course.course_id || course.id,
+							courseName: course.course_name || course.name
+						})}
+					>
+						+ Добавить тест
+					</button>
 				)}
 			</div>
 		</div>
