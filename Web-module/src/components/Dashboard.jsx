@@ -1,10 +1,12 @@
 import React, { useState, useEffect } from 'react';
 import QuestionView from './QuestionView';
+import TestCreator from './TestCreator';
 
 const Dashboard = ({ user, onLogout }) => {
 	const [activeTab, setActiveTab] = useState('home');
 	const [startedTest, setStartedTest] = useState(null);
 	const [editMode, setEditMode] = useState(false);
+	const [isCreatingTest, setIsCreatingTest] = useState(null); // null или { courseId, courseName }
 
 	// Состояния для реальных данных
 	const [courses, setCourses] = useState([]); // Сюда загрузим курсы из БД
@@ -17,16 +19,25 @@ const Dashboard = ({ user, onLogout }) => {
 	const isStudent = false  //user?.role === 'Student' || (!isAdmin && !isTeacher); НУЖНО БУДЕТ ПОТОМ ИСПРАВИТЬ!!!!!!!!!
 
 	// --- 1. ЗАГРУЗКА КУРСОВ (При открытии вкладки "home") ---
+	// --- 1. ЗАГРУЗКА КУРСОВ ---
 	useEffect(() => {
 		if (activeTab === 'home') {
 			const fetchCourses = async () => {
 				try {
-					const res = await fetch('/api/student/dashboard');
+					// Если мы Админ или Учитель — грузим ВСЕ курсы, чтобы видеть созданные.
+					// Если Студент — грузим только свои.
+					// (Используем isAdmin/isTeacher из переменных выше)
+					const endpoint = (isAdmin || isTeacher) ? '/api/courses/all' : '/api/student/dashboard';
+
+					const res = await fetch(endpoint);
 					if (res.ok) {
 						const data = await res.json();
-						console.log("📦 Данные курсов из БД:", data);
-						// C++ возвращает структуру { user_id: "...", courses: [...] }
+						console.log("📦 Курсы:", data);
+
+						// C++ VIEW_OWN_DATA возвращает { courses: [...] }
+						// C++ VIEW_ALL_COURSES тоже возвращает { courses: [...] }
 						if (data.courses) setCourses(data.courses);
+						else setCourses([]);
 					}
 				} catch (e) {
 					console.error("Ошибка загрузки курсов:", e);
@@ -34,7 +45,7 @@ const Dashboard = ({ user, onLogout }) => {
 			};
 			fetchCourses();
 		}
-	}, [activeTab]);
+	}, [activeTab, isAdmin, isTeacher]);
 
 	// --- 2. ЗАГРУЗКА ПОЛЬЗОВАТЕЛЕЙ (При открытии вкладки "users") ---
 	useEffect(() => {
@@ -79,6 +90,73 @@ const Dashboard = ({ user, onLogout }) => {
 		} catch (err) {
 			console.error(err);
 			alert("Ошибка сети");
+		}
+	};
+
+	// --- СОЗДАНИЕ КУРСА ---
+	const handleCreateCourse = async () => {
+		// 1. Простой способ спросить данные (можно заменить на красивое модальное окно потом)
+		const name = prompt("Введите название нового курса:");
+		if (!name) return;
+
+		const description = prompt("Введите описание курса:", "Базовый курс");
+
+		setIsLoading(true);
+		try {
+			const res = await fetch('/api/course/create', {
+				method: 'POST',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify({
+					name,
+					description,
+					teacherId: "SELF" // Метка для Node.js
+				})
+			});
+
+			const data = await res.json();
+
+			if (data.status === 'success' || data.course_id) {
+				alert(`Курс "${data.course_name}" успешно создан!`);
+				// Перезагружаем страницу, чтобы курс появился в списке
+				window.location.reload();
+			} else {
+				alert("Ошибка создания: " + (data.error || JSON.stringify(data)));
+			}
+
+		} catch (e) {
+			console.error(e);
+			alert("Ошибка сети");
+		} finally {
+			setIsLoading(false);
+		}
+	};
+
+	const handleSaveTest = async (testData) => {
+		setIsLoading(true);
+		try {
+			const res = await fetch('/api/test/create-full', {
+				method: 'POST',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify({
+					courseId: isCreatingTest.courseId,
+					title: testData.title,
+					questions: testData.questions
+				})
+			});
+			const data = await res.json();
+
+			if (data.status === 'success' || data.test_id) {
+				alert("Тест создан!");
+				setIsCreatingTest(null);
+				// Тут можно вызвать fetchCourses(), если вынесешь его наружу из useEffect
+				window.location.reload();
+			} else {
+				alert("Ошибка: " + JSON.stringify(data));
+			}
+		} catch (e) {
+			alert("Ошибка сети");
+		} finally {
+			setIsLoading(false);
 		}
 	};
 
@@ -153,7 +231,10 @@ const Dashboard = ({ user, onLogout }) => {
 			{(isTeacher || isAdmin) && (
 				<button
 					style={{ ...styles.outlineBtn, marginTop: '10px', width: '100%' }}
-					onClick={() => alert("Скоро: Создание теста")}
+					onClick={() => setIsCreatingTest({
+						courseId: course.course_id || course.id,
+						courseName: course.course_name || course.name
+					})}
 				>
 					+ Добавить тест
 				</button>
@@ -258,6 +339,14 @@ const Dashboard = ({ user, onLogout }) => {
 				/>
 			)}
 
+			{isCreatingTest && (
+				<TestCreator
+					courseName={isCreatingTest.courseName}
+					onSave={handleSaveTest}
+					onCancel={() => setIsCreatingTest(null)}
+				/>
+			)}
+
 			<aside style={styles.sidebar}>
 				<div style={styles.logo}>
 					<span style={styles.logoIcon}>⚡</span> Versal Test
@@ -299,7 +388,7 @@ const Dashboard = ({ user, onLogout }) => {
 					</div>
 					{/* ВСТАВИТЬ СЮДА: Кнопка создания курса (видна только учителю/админу) */}
 					{activeTab === 'home' && (isTeacher || isAdmin) && (
-						<button style={styles.addBtn} onClick={() => alert("Скоро: Создание курса")}>
+						<button style={styles.addBtn} onClick={handleCreateCourse}>
 							+ Создать курс
 						</button>
 					)}

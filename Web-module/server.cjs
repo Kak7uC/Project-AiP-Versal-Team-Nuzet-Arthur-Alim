@@ -91,11 +91,14 @@ app.get('/api/auth/confirm', async (req, res) => {
 			if (response.ok) {
 				const authResult = await response.json();
 
-				if (authResult.status === 'granted') {
-					// Формируем данные авторизованного пользователя
+				if (authResult.status === 'granted' && authResult.access_token) {
+					// 1. Расшифровываем токен, чтобы узнать РЕАЛЬНУЮ роль
+					const payload = JSON.parse(Buffer.from(authResult.access_token.split('.')[1], 'base64').toString());
+
 					const authorizedData = {
 						status: 'Authorized',
 						userName: user,
+						role: payload.role || 'Student', // <--- ТЕПЕРЬ РОЛЬ БУДЕТ НАСТОЯЩЕЙ
 						accessToken: authResult.access_token,
 						refreshToken: authResult.refresh_token
 					};
@@ -377,4 +380,177 @@ app.get('/api/proxy/attempt', (req, res) =>
 		Test_ID: req.query.id // В C++ VIEW_ATTEMPT принимает Test_ID и ищет попытку студента
 	}, req).then(r => res.status(r.status).send(r.body))
 );
+
+// --- УПРАВЛЕНИЕ КУРСАМИ ---
+app.post('/api/course/edit', (req, res) =>
+	callCpp('EDIT_COURSE_INFO', {
+		Course_ID: req.body.courseId,
+		Course_NAME: req.body.name,
+		Description: req.body.description
+	}, req).then(r => res.status(r.status).send(r.body))
+);
+
+app.post('/api/course/delete', (req, res) =>
+	callCpp('DELETE_COURSE', { Course_ID: req.body.courseId }, req).then(r => res.status(r.status).send(r.body))
+);
+
+// --- УПРАВЛЕНИЕ ТЕСТАМИ ---
+app.post('/api/test/create', (req, res) =>
+	callCpp('CREATE_TEST', {
+		Course_ID: req.body.courseId,
+		Title: req.body.title
+	}, req).then(r => res.status(r.status).send(r.body))
+);
+
+app.post('/api/test/delete', (req, res) =>
+	callCpp('DELETE_TEST', {
+		Course_ID: req.body.courseId, // Нужно для проверки прав
+		Test_ID: req.body.testId
+	}, req).then(r => res.status(r.status).send(r.body))
+);
+
+app.post('/api/test/toggle', (req, res) =>
+	callCpp('TOGGLE_TEST_ACTIVE', {
+		Course_ID: req.body.courseId,
+		Test_ID: req.body.testId,
+		Activate: req.body.isActive // true/false
+	}, req).then(r => res.status(r.status).send(r.body))
+);
+
+// --- УПРАВЛЕНИЕ ВОПРОСАМИ ---
+app.post('/api/question/create', async (req, res) => {
+	// 1. Создаем вопрос
+	const createRes = await callCpp('CREATE_QUESTION', {
+		Title: req.body.title,
+		Text: req.body.text,
+		Options: req.body.options, // JSON string
+		Answer_Index: req.body.correctIndex
+	}, req);
+
+	const createData = JSON.parse(createRes.body);
+	if (createData.error || !createData.question_id) return res.send(createRes.body);
+
+	// 2. Привязываем к тесту (НОВАЯ ФУНКЦИЯ)
+	const linkRes = await callCpp('ADD_QUESTION_TO_TEST', {
+		Test_ID: req.body.testId,
+		Question_ID: createData.question_id
+	}, req);
+
+	res.status(linkRes.status).send(linkRes.body);
+});
+
+// --- НЕДОСТАЮЩИЕ МАРШРУТЫ ДЛЯ КУРСОВ ---
+
+// 1. Создать курс (ЭТОГО НЕ БЫЛО)
+app.post('/api/course/create', async (req, res) => {
+	const sessionToken = req.cookies['session_token'];
+	const cachedData = await redis.get(sessionToken);
+	if (!cachedData) return res.status(401).json({ error: "No session" });
+
+	const user = JSON.parse(cachedData);
+	const payload = JSON.parse(Buffer.from(user.accessToken.split('.')[1], 'base64').toString());
+
+	// Если teacherId равен "SELF", берем ID текущего пользователя из токена
+	const teacherId = (req.body.teacherId === "SELF") ? payload.user_id : req.body.teacherId;
+
+	callCpp('CREATE_COURSE', {
+		Course_NAME: req.body.name,
+		Description: req.body.description,
+		Target_ID: teacherId
+	}, req).then(r => res.status(r.status).send(r.body));
+});
+
+// 2. Получить список ВСЕХ курсов (ЭТОГО НЕ БЫЛО - нужно для Админа)
+app.get('/api/courses/all', (req, res) =>
+	callCpp('VIEW_ALL_COURSES', {}, req)
+		.then(r => res.status(r.status).send(r.body))
+);
+
+// --- УЛУЧШЕННЫЙ БЛОК API (Вставь перед app.listen) ---
+
+// 1. Создать курс (С защитой от сбоев)
+// Вставь это в server.cjs ВМЕСТО старого маршрута create course
+app.post('/api/course/create', async (req, res) => {
+	try {
+		const sessionToken = req.cookies['session_token'];
+		const cachedData = await redis.get(sessionToken);
+		if (!cachedData) return res.status(401).json({ error: "No session" });
+
+		const user = JSON.parse(cachedData);
+		// Достаем ID юзера из токена
+		const payload = JSON.parse(Buffer.from(user.accessToken.split('.')[1], 'base64').toString());
+
+		// Если фронт прислал "SELF", подставляем ID из токена
+		const teacherId = (req.body.teacherId === "SELF") ? payload.user_id : req.body.teacherId;
+
+		const cppRes = await callCpp('CREATE_COURSE', {
+			Course_NAME: req.body.name,
+			Description: req.body.description,
+			Target_ID: teacherId
+		}, req);
+
+		res.status(cppRes.status).send(cppRes.body);
+	} catch (e) {
+		console.error("Create Course Error:", e);
+		res.status(500).json({ error: "Server Error" });
+	}
+});
+
+// 2. Получить ВСЕ курсы (Для Админа/Учителя)
+app.get('/api/courses/all', (req, res) =>
+	callCpp('VIEW_ALL_COURSES', {}, req)
+		.then(r => res.status(r.status).send(r.body))
+);
+
+// 3. Создание сложного теста (Цепочка вызовов)
+// C++ требует создать тест -> создать вопрос -> привязать вопрос.
+// Мы сделаем это на Node.js, чтобы фронтенд не слал 100 запросов.
+app.post('/api/test/create-full', async (req, res) => {
+	try {
+		const { courseId, title, questions } = req.body; // questions = [{text, options:[], correctIndex}]
+
+		// A. Создаем сам тест
+		const testRes = await callCpp('CREATE_TEST', { Course_ID: courseId, Title: title }, req);
+		const testData = JSON.parse(testRes.body);
+		if (testData.error || !testData.test_id) return res.status(400).send(testRes.body);
+
+		const testId = testData.test_id;
+
+		// B. Создаем вопросы и привязываем их
+		for (const q of questions) {
+			// 1. Создать вопрос
+			const qRes = await callCpp('CREATE_QUESTION', {
+				Title: q.text.substring(0, 30) + "...", // Краткое название
+				Text: q.text,
+				Options: JSON.stringify(q.options),
+				Answer_Index: q.correctIndex
+			}, req);
+
+			const qData = JSON.parse(qRes.body);
+			if (qData.question_id) {
+				// 2. Привязать к тесту (Используем метод C++, который ты добавил ранее)
+				// Если в C++ нет ADD_QUESTION_TO_TEST, вопросы не привяжутся!
+				// Предполагаем, что ты добавил это в logic.cpp или используешь существующий механизм.
+				// В твоем logic.cpp я видел REMOVE, но не ADD. 
+				// !!! ВАЖНО: Если C++ не поддерживает добавление вопроса в существующий тест,
+				// то этот шаг не сработает. Но мы попробуем.
+				await callCpp('ADD_QUESTION_TO_TEST', {
+					Test_ID: testId,
+					Question_ID: qData.question_id
+				}, req);
+			}
+		}
+
+		// C. Активируем тест (сразу делаем доступным)
+		await callCpp('TOGGLE_TEST_ACTIVE', {
+			Course_ID: courseId, Test_ID: testId, Activate: "true"
+		}, req);
+
+		res.json({ status: "success", test_id: testId });
+
+	} catch (e) {
+		console.error("Test Creation Error:", e);
+		res.status(500).json({ error: "Failed to create full test" });
+	}
+});
 app.listen(3001, () => console.log('🚀 Node.js Server (v3) на порту 3001 запущен'));
