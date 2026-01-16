@@ -33,6 +33,7 @@ class BotService:
         self.core = core
 
     async def handle(self, chat_id: int, text: str) -> List[str]:
+        print("INCOMING:", chat_id, repr(text))
         text = (text or "").strip()
         cmd = _cmd(text)
 
@@ -50,23 +51,25 @@ class BotService:
         if session.status == "anon":
             check = await self.auth.safe_check_login(session.login_token or "")
             if check is None:
-                return [
-                    "⚠️ Сервис авторизации сейчас недоступен.",
-                    "Попробуй позже.",
-                ]
+                return ["⚠️ Сервис авторизации сейчас недоступен.", "Попробуй позже."]
 
-            if check["status"] == "invalid":
+            st = (check.get("status") or "").lower()
+
+            if st in ("expired", "gone"):
                 await self.redis.delete_session(chat_id)
                 return [
-                    "Ты не авторизован.",
-                    "Доступные варианты входа: /login github | /login yandex | /login code",
+                    "Сессия входа устарела. Попробуй ещё раз:",
+                    "/login github | /login yandex",
                 ]
 
-            if check["status"] == "denied":
+            if st == "denied":
                 await self.redis.delete_session(chat_id)
-                return ["Неудачная авторизация. Попробуй ещё раз: /login github | /login yandex | /login code"]
+                return ["Неудачная авторизация. Попробуй ещё раз: /login github | /login yandex"]
 
-            if check["status"] == "approved":
+            if st == "pending":
+                return ["Ожидаю подтверждение входа…"]
+
+            if st == "granted":
                 at = check.get("access_token")
                 rt = check.get("refresh_token")
                 if not at or not rt:
@@ -76,6 +79,7 @@ class BotService:
                 session.refresh_token = rt
                 session.login_token = None
                 await self._save_session(chat_id, session)
+
 
         if session.status != "auth":
             return ["⚠️ Неожиданный статус сессии."]
@@ -168,3 +172,7 @@ class BotService:
             "access_token": s.access_token,
             "refresh_token": s.refresh_token,
         })
+    async def tick_check_login(self):
+        return {}
+    async def tick_notifications(self):
+        return {}

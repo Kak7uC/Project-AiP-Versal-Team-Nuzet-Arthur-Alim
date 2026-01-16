@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import secrets
 from typing import Optional, Tuple
 
 import redis.asyncio as redis
@@ -40,3 +41,21 @@ class RedisRepo:
         except Exception:
             return None
         return chat_id, UserSession(**json.loads(raw))
+
+    async def get_session(self, chat_id: int) -> Optional[dict]:
+        s = await self.get(chat_id)
+        if s is None:
+            return None
+        return s.model_dump()
+
+    async def save_session(self, chat_id: int, data: dict) -> None:
+        await self.set(chat_id, UserSession(**data))
+
+    async def delete_session(self, chat_id: int) -> None:
+        await self.delete(chat_id)
+
+    async def new_login_token(self) -> str:
+        return secrets.token_urlsafe(24)
+
+    async def save_anon(self, chat_id: int, login_token: str) -> None:
+        await self.save_session(chat_id, {"status": "anon", "login_token": login_token})

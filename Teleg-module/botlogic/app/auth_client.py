@@ -1,5 +1,5 @@
 from __future__ import annotations
-from typing import Any, Dict
+from typing import Any, Dict, Optional
 import httpx
 
 
@@ -8,26 +8,45 @@ class AuthClient:
         self.base_url = (base_url or "").rstrip("/")
         self.timeout = timeout_sec
 
-    async def request_login(self, login_type: str, login_token: str) -> str:
+    async def safe_start_login(self, login_type: str, login_token: str) -> Optional[str]:
         if not self.base_url:
-            return f"(demo) /login {login_type} state={login_token}"
+            return None
+        try:
+            async with httpx.AsyncClient(timeout=self.timeout) as client:
+                r = await client.get(
+                    f"{self.base_url}/api/auth/init",
+                    params={"type": login_type, "login_token": login_token},
+                )
+                r.raise_for_status()
+                data = r.json()
+                # сейчас у Артура есть только auth_url (github/yandex)
+                return data.get("auth_url") or None
+        except Exception:
+            return None
 
-        async with httpx.AsyncClient(timeout=self.timeout) as client:
-            r = await client.get(f"{self.base_url}/login", params={"type": login_type, "state": login_token})
-            r.raise_for_status()
-            return r.text
-
-    async def check_login_token(self, login_token: str) -> Dict[str, Any]:
+    async def safe_check_login(self, login_token: str) -> Optional[Dict[str, Any]]:
         if not self.base_url:
-            return {"status": "pending"}
+            return None
+        try:
+            async with httpx.AsyncClient(timeout=self.timeout) as client:
+                r = await client.get(f"{self.base_url}/api/auth/check/{login_token}")
+                if r.status_code == 410:
+                    return {"status": "expired"}
+                r.raise_for_status()
+                return r.json()
+        except Exception:
+            return None
 
-        async with httpx.AsyncClient(timeout=self.timeout) as client:
-            r = await client.get(f"{self.base_url}/check", params={"state": login_token})
-            r.raise_for_status()
-            return r.json()
-
-    async def logout_all(self, refresh_token: str) -> None:
+    async def safe_logout_all(self, refresh_token: str, all_devices: bool = True) -> bool:
         if not self.base_url:
-            return
-        async with httpx.AsyncClient(timeout=self.timeout) as client:
-            await client.post(f"{self.base_url}/logout", json={"refresh_token": refresh_token})
+            return False
+        try:
+            async with httpx.AsyncClient(timeout=self.timeout) as client:
+                r = await client.post(
+                    f"{self.base_url}/api/auth/logout",
+                    params={"all": "true" if all_devices else "false"},
+                    json={"refresh_token": refresh_token},
+                )
+                return r.status_code < 400
+        except Exception:
+            return False
