@@ -1695,6 +1695,41 @@ string REMOVE_QUESTION_FROM_TEST(string ID, string JWT, string TEST_ID, string Q
     PQfinish(conn);
     return "{\"status\":\"success\"}";
 }
+
+string ADD_QUESTION_TO_TEST(string ID, string JWT, string TEST_ID, string QUESTION_ID) {
+    if (!TOKEN_APPROVED(ID, JWT)) return "ERROR 401";
+    if (!checkPermission(JWT, "test:quest:add:own")) return "ERROR 403";
+    
+    PGconn* conn = PQconnectdb("host=ep-snowy-truth-ah9dp5ai-pooler.c-3.us-east-1.aws.neon.tech port=5432 dbname=neondb user=neondb_owner password=npg_tTdv0G5elYum sslmode=require");
+    if (PQstatus(conn) != CONNECTION_OK) { PQfinish(conn); return "{\"error\":\"DB fail\"}"; }
+    
+    // Проверка прав (учитель курса)
+    const char* check_params[1] = {TEST_ID.c_str()};
+    PGresult* check_res = PQexecParams(conn,
+        "SELECT c.teacher_id FROM tests t JOIN courses c ON t.course_id = c.id WHERE t.id = $1 AND NOT t.is_deleted",
+        1, NULL, check_params, NULL, NULL, 0);
+    
+    if (PQresultStatus(check_res) != PGRES_TUPLES_OK || PQntuples(check_res) == 0) {
+        PQclear(check_res); PQfinish(conn); return "{\"error\":\"Test not found\"}";
+    }
+    string teacher_id = PQgetvalue(check_res, 0, 0);
+    PQclear(check_res);
+    
+    if (ID != teacher_id) { PQfinish(conn); return "{\"error\":\"No permission\"}"; }
+    
+    // Добавляем вопрос в конец списка
+    const char* params[2] = {TEST_ID.c_str(), QUESTION_ID.c_str()};
+    PGresult* res = PQexecParams(conn,
+        "INSERT INTO test_questions (test_id, question_id, question_order) VALUES ($1, $2, (SELECT COALESCE(MAX(question_order), 0) + 1 FROM test_questions WHERE test_id = $1))",
+        2, NULL, params, NULL, NULL, 0);
+        
+    if (PQresultStatus(res) != PGRES_COMMAND_OK) {
+        PQclear(res); PQfinish(conn); return "{\"error\":\"Add failed\"}";
+    }
+    
+    PQclear(res); PQfinish(conn);
+    return "{\"status\":\"success\"}";
+}
 string VIEW_TEST_ATTEMPTS(string ID, string JWT, string TEST_ID) {
     if (!TOKEN_APPROVED(ID, JWT)) {
         return "ERROR 401";
