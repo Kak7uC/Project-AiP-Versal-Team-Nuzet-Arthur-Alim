@@ -1,15 +1,20 @@
 from __future__ import annotations
+
 from typing import Any, Dict, Optional
 import httpx
 
 
 class AuthClient:
+
     def __init__(self, base_url: str, timeout_sec: float = 8.0):
         self.base_url = (base_url or "").rstrip("/")
         self.timeout = timeout_sec
 
     async def safe_start_login(self, login_type: str, login_token: str) -> Optional[str]:
         if not self.base_url:
+            return None
+        
+        if (login_type or "").lower() not in ("github", "yandex"):
             return None
         try:
             async with httpx.AsyncClient(timeout=self.timeout) as client:
@@ -19,7 +24,6 @@ class AuthClient:
                 )
                 r.raise_for_status()
                 data = r.json()
-                # сейчас у Артура есть только auth_url (github/yandex)
                 return data.get("auth_url") or None
         except Exception:
             return None
@@ -32,6 +36,20 @@ class AuthClient:
                 r = await client.get(f"{self.base_url}/api/auth/check/{login_token}")
                 if r.status_code == 410:
                     return {"status": "expired"}
+                r.raise_for_status()
+                return r.json()
+        except Exception:
+            return None
+
+    async def safe_verify_code(self, code: str) -> Optional[Dict[str, Any]]:
+        if not self.base_url:
+            return None
+        code = (code or "").strip()
+        if not code:
+            return None
+        try:
+            async with httpx.AsyncClient(timeout=self.timeout) as client:
+                r = await client.get(f"{self.base_url}/oauth/code/verify", params={"code": code})
                 r.raise_for_status()
                 return r.json()
         except Exception:
@@ -50,3 +68,14 @@ class AuthClient:
                 return r.status_code < 400
         except Exception:
             return False
+
+    async def safe_refresh(self, refresh_token: str) -> Optional[Dict[str, Any]]:
+        if not self.base_url:
+            return None
+        try:
+            async with httpx.AsyncClient(timeout=self.timeout) as client:
+                r = await client.post(f"{self.base_url}/api/auth/refresh", json={"refresh_token": refresh_token})
+                r.raise_for_status()
+                return r.json()
+        except Exception:
+            return None

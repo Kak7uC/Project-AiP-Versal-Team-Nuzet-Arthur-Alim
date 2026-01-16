@@ -7,13 +7,14 @@ class Settings(BaseSettings):
     REDIS_HOST: str = "redis"
     REDIS_PORT: int = 6379
 
-    AUTH_BASE_URL: str = "http://auth:8000"   # заглушка 
-    CORE_BASE_URL: str = ""                   # заглушка 
+    AUTH_BASE_URL: str = "http://localhost:8080"
+    CORE_BASE_URL: str = "http://localhost:8081"
 
-    BOTLOGIC_DEMO_MODE: int = 1               
+    # 1 - демо, 0 - рабочий
+    BOTLOGIC_DEMO_MODE: int = 0
     HTTP_TIMEOUT_SEC: float = 8.0
 
-    LOGIN_TTL_SEC: int = 60 * 10              
+    LOGIN_TTL_SEC: int = 60 * 10
 
 
 settings = Settings()
