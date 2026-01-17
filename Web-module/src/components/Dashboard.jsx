@@ -7,42 +7,75 @@ const Dashboard = ({ user, onLogout }) => {
 	const [startedTest, setStartedTest] = useState(null);
 	const [editMode, setEditMode] = useState(false);
 	const [isCreatingTest, setIsCreatingTest] = useState(null); // null или { courseId, courseName }
+	const [testActiveMap, setTestActiveMap] = useState({}); // { [testId]: true/false }
+	const [attemptsModal, setAttemptsModal] = useState(null); // null или { testId, testName, data: [] }
+
 
 	// Состояния для реальных данных
 	const [courses, setCourses] = useState([]); // Сюда загрузим курсы из БД
+	const [blockedMap, setBlockedMap] = useState({}); // { [userId]: true/false }
+
 	const [userList, setUserList] = useState([]); // Сюда загрузим юзеров (для админа)
 	const [newName, setNewName] = useState({ first: '', last: '' });
 	const [isLoading, setIsLoading] = useState(false);
 
-	const isAdmin = true //user?.role === 'Администратор';
-	const isTeacher = false //user?.role === 'Учитель';
-	const isStudent = false //user?.role === 'Студент' || (!isAdmin && !isTeacher);
+	const isAdmin = user?.role === 'Admin';
+	const isTeacher = user?.role === 'Teacher';
+	// const isStudent = false //user?.role === 'Student' || (!isAdmin && !isTeacher);
 
-	// --- 1. ЗАГРУЗКА КУРСОВ ---
-	useEffect(() => {
-		if (activeTab === 'home') {
-			const fetchCourses = async () => {
-				try {
-					// Если мы Админ или Учитель — грузим ВСЕ курсы, чтобы видеть созданные.
-					// Если Студент — грузим только свои.
-					// (Используем isAdmin/isTeacher из переменных выше)
-					const endpoint = (isAdmin || isTeacher) ? '/api/courses/all' : '/api/student/dashboard';
+	// --- 1. ЕДИНСТВЕННАЯ ФУНКЦИЯ ЗАГРУЗКИ КУРСОВ ---
+	const fetchCourses = async () => {
+		try {
+			// ЛОГИКА:
+			// 1. По умолчанию грузим ЛИЧНЫЕ данные (чтобы видеть оценки).
+			let endpoint = '/api/student/dashboard';
 
-					const res = await fetch(endpoint);
-					if (res.ok) {
-						const data = await res.json();
-						console.log("📦 Курсы:", data);
+			// 2. И только если мы Админ/Учитель И сидим на вкладке "Дисциплины" (home),
+			// тогда грузим ВСЕ курсы (чтобы можно было их редактировать).
+			if (activeTab === 'home' && (isAdmin || isTeacher)) {
+				endpoint = '/api/courses/all';
+			}
 
-						if (data.courses) setCourses(data.courses);
-						else setCourses([]);
-					}
-				} catch (e) {
-					console.error("Ошибка загрузки курсов:", e);
+			console.log(`🚀 Загрузка данных... Вкладка: ${activeTab}, Источник: ${endpoint}`);
+
+			const res = await fetch(endpoint);
+			if (res.ok) {
+				const data = await res.json();
+
+				// Защита от сбоя
+				if (data.error) {
+					console.error("Ошибка от сервера:", data.error);
+					return;
 				}
-			};
+
+				if (data.courses) {
+					setCourses(data.courses);
+					if (activeTab === 'home' && (isAdmin || isTeacher)) {
+						data.courses.forEach(course => {
+							(course.tests || []).forEach(test => {
+								const cId = course.course_id || course.id;
+								const tId = test.test_id || test.id;
+								fetchTestActive(cId, tId);
+							});
+						});
+					}
+				} else {
+					setCourses([]);
+				}
+			}
+		} catch (e) {
+			console.error("Ошибка сети при загрузке:", e);
+		}
+	};
+
+	// --- ОБНОВЛЕНИЕ ПРИ СМЕНЕ ВКЛАДКИ ---
+	useEffect(() => {
+		// Грузим данные только если открыты вкладки 'home' или 'results'
+		if (activeTab === 'home' || activeTab === 'results') {
 			fetchCourses();
 		}
 	}, [activeTab, isAdmin, isTeacher]);
+
 
 	// --- 2. ЗАГРУЗКА ПОЛЬЗОВАТЕЛЕЙ
 	useEffect(() => {
@@ -56,6 +89,23 @@ const Dashboard = ({ user, onLogout }) => {
 						// Предполагаем, что C++ вернет массив или объект с массивом
 						// Адаптируй этот момент, если формат C++ отличается
 						setUserList(Array.isArray(data) ? data : (data.users || []));
+						const usersArr = Array.isArray(data) ? data : (data.users || []);
+						setUserList(usersArr);
+
+						// Подгружаем статус блокировки для каждого
+						const pairs = await Promise.all(usersArr.map(async (u) => {
+							try {
+								const br = await fetch(`/api/admin/blocked?userId=${encodeURIComponent(u.id)}`);
+								if (!br.ok) return [u.id, false];
+								const bj = await br.json();
+								return [u.id, !!bj.is_blocked];
+							} catch {
+								return [u.id, false];
+							}
+						}));
+
+						setBlockedMap(Object.fromEntries(pairs));
+
 					}
 				} catch (e) {
 					console.error("Ошибка загрузки пользователей:", e);
@@ -89,6 +139,90 @@ const Dashboard = ({ user, onLogout }) => {
 			alert("Ошибка сети");
 		}
 	};
+
+
+	// --- СМЕНА РОЛИ (АДМИН) ---
+	const handleRoleChange = async (userId, newRole) => {
+		if (!confirm(`Вы уверены, что хотите назначить роль ${newRole}?`)) return;
+		setIsLoading(true);
+		try {
+			const res = await fetch('/api/admin/role', {
+				method: 'POST',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify({ userId, newRole })
+			});
+			const data = await res.json();
+
+			if (data.success) {
+				alert("Роль успешно изменена!");
+				// Обновляем список пользователей
+				const uRes = await fetch('/api/admin/users');
+				const uData = await uRes.json();
+				setUserList(Array.isArray(uData) ? uData : (uData.users || []));
+			} else {
+				alert("Ошибка: " + (data.error || JSON.stringify(data)));
+			}
+		} catch (e) {
+			alert("Ошибка сети");
+		} finally {
+			setIsLoading(false);
+		}
+	};
+
+
+	const handleToggleBlocked = async (userId, nextBlocked) => {
+		if (!confirm(nextBlocked ? "Заблокировать пользователя?" : "Разблокировать пользователя?")) return;
+
+		setIsLoading(true);
+		try {
+			const res = await fetch('/api/admin/blocked', {
+				method: 'POST',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify({ userId, blocked: nextBlocked })
+			});
+
+			const text = await res.text();
+			if (!res.ok) {
+				alert("Ошибка: " + text);
+				return;
+			}
+
+			// обновляем локально
+			setBlockedMap((m) => ({ ...m, [userId]: nextBlocked }));
+		} catch (e) {
+			alert("Ошибка сети");
+		} finally {
+			setIsLoading(false);
+		}
+	};
+
+
+	// --- ЗАПИСЬ СТУДЕНТА (УЧИТЕЛЬ) ---
+	const handleEnrollStudent = async (courseId) => {
+		const studentId = prompt("Введите ID студента (например: github_12345):");
+		if (!studentId) return;
+
+		setIsLoading(true);
+		try {
+			const res = await fetch('/api/course/enroll', {
+				method: 'POST',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify({ courseId, studentId })
+			});
+			const data = await res.json();
+
+			if (data.status === 'success') {
+				alert("Студент успешно записан!");
+			} else {
+				alert("Ошибка: " + (data.error || JSON.stringify(data)));
+			}
+		} catch (e) {
+			alert("Ошибка сети");
+		} finally {
+			setIsLoading(false);
+		}
+	};
+
 
 	// --- СОЗДАНИЕ КУРСА ---
 	const handleCreateCourse = async () => {
@@ -217,6 +351,63 @@ const Dashboard = ({ user, onLogout }) => {
 			if (data.courses) setCourses(data.courses);
 		} catch (e) {
 			alert("Ошибка удаления теста");
+		} finally {
+			setIsLoading(false);
+		}
+	};
+
+
+	const fetchTestActive = async (courseId, testId) => {
+		try {
+			const res = await fetch(`/api/test/active?courseId=${encodeURIComponent(courseId)}&testId=${encodeURIComponent(testId)}`);
+			if (!res.ok) return;
+			const data = await res.json();
+			setTestActiveMap(m => ({ ...m, [testId]: !!data.is_active }));
+		} catch { }
+	};
+
+	const toggleTestActive = async (courseId, testId, activate) => {
+		setIsLoading(true);
+		try {
+			const res = await fetch('/api/test/active', {
+				method: 'POST',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify({ courseId, testId, activate })
+			});
+			const text = await res.text();
+			if (!res.ok) return alert("Ошибка: " + text);
+
+			// пробуем JSON
+			try {
+				const data = JSON.parse(text);
+				if (typeof data.is_active === "boolean") {
+					setTestActiveMap(m => ({ ...m, [testId]: data.is_active }));
+				} else {
+					// если сервер не вернул is_active — просто обновим через fetch
+					fetchTestActive(courseId, testId);
+				}
+			} catch {
+				fetchTestActive(courseId, testId);
+			}
+		} finally {
+			setIsLoading(false);
+		}
+	};
+
+	const openAttempts = async (testId, testName) => {
+		setIsLoading(true);
+		try {
+			const res = await fetch(`/api/test/attempts?testId=${encodeURIComponent(testId)}`);
+			const text = await res.text();
+			if (!res.ok) return alert("Ошибка: " + text);
+
+			const data = JSON.parse(text);
+			const attempts = data.attempts || [];
+
+			setAttemptsModal({ testId, testName, data: attempts });
+		} catch (e) {
+			alert("Не удалось загрузить попытки (смотри консоль)");
+			console.error(e);
 		} finally {
 			setIsLoading(false);
 		}
@@ -373,31 +564,79 @@ const Dashboard = ({ user, onLogout }) => {
 			<div style={{ marginTop: 'auto', display: 'flex', flexDirection: 'column', gap: '8px' }}>
 				{/* Список тестов */}
 				{course.tests && course.tests.length > 0 ? (
-					course.tests.map(test => (
-						<div key={test.test_id || test.id} style={{ display: 'flex', gap: '5px' }}>
-							{/* Кнопка запуска теста (Исправлены ID и Title) */}
-							<button
-								style={{ ...styles.primaryBtn, marginBottom: 0 }}
-								onClick={() => handleStartTest(test.test_id || test.id, test.test_title || test.title)}
-							>
-								📝 {test.test_title || test.title || "Тест"}
-							</button>
+					course.tests.map(test => {
+						const testId = test.test_id || test.id;
+						const courseId = course.course_id || course.id;
 
-							{/* Кнопка удаления теста (Новая) */}
-							{(isAdmin || isTeacher) && (
+						return (
+							<div key={testId} style={{ display: 'flex', gap: '5px', alignItems: 'center' }}>
+								{/* Запуск */}
 								<button
-									style={{
-										width: '40px', backgroundColor: '#fee2e2', color: 'red', border: 'none',
-										borderRadius: '8px', cursor: 'pointer', fontWeight: 'bold'
-									}}
-									onClick={() => handleDeleteTest(course.course_id || course.id, test.test_id || test.id)}
-									title="Удалить тест"
+									style={{ ...styles.primaryBtn, marginBottom: 0 }}
+									onClick={() => handleStartTest(testId, test.test_title || test.title)}
 								>
-									✕
+									📝 {test.test_title || test.title || "Тест"}
 								</button>
-							)}
-						</div>
-					))
+
+								{(isAdmin || isTeacher) && (
+									<>
+										{/* ON/OFF */}
+										<button
+											title="Включить/выключить тест"
+											style={{
+												width: '54px',
+												border: 'none',
+												borderRadius: '8px',
+												cursor: 'pointer',
+												fontWeight: 'bold',
+												backgroundColor: testActiveMap[testId] ? '#d1fae5' : '#f3f4f6'
+											}}
+											onClick={() => {
+												const cur = !!testActiveMap[testId];
+												toggleTestActive(courseId, testId, !cur);
+											}}
+										>
+											{testActiveMap[testId] ? "ON" : "OFF"}
+										</button>
+
+										{/* Attempts */}
+										<button
+											title="Посмотреть попытки"
+											style={{
+												width: '42px',
+												border: 'none',
+												borderRadius: '8px',
+												cursor: 'pointer',
+												fontWeight: 'bold',
+												backgroundColor: '#e0e7ff'
+											}}
+											onClick={() => openAttempts(testId, test.test_title || test.title)}
+										>
+											👥
+										</button>
+
+										{/* Удалить тест */}
+										<button
+											style={{
+												width: '40px',
+												backgroundColor: '#fee2e2',
+												color: 'red',
+												border: 'none',
+												borderRadius: '8px',
+												cursor: 'pointer',
+												fontWeight: 'bold'
+											}}
+											onClick={() => handleDeleteTest(courseId, testId)}
+											title="Удалить тест"
+										>
+											✕
+										</button>
+									</>
+								)}
+							</div>
+						);
+					})
+
 				) : (
 					<div style={{ color: '#999', fontSize: '13px', fontStyle: 'italic' }}>Нет тестов</div>
 				)}
@@ -412,6 +651,16 @@ const Dashboard = ({ user, onLogout }) => {
 						})}
 					>
 						+ Добавить тест
+					</button>
+				)}
+
+				{/* КНОПКА ЗАПИСАТЬ СТУДЕНТА (Только для учителя/админа) */}
+				{(isTeacher || isAdmin) && (
+					<button
+						style={{ ...styles.outlineBtn, marginTop: '5px', borderColor: '#10b981', color: '#10b981' }}
+						onClick={() => handleEnrollStudent(course.course_id || course.id)}
+					>
+						+ Записать студента
 					</button>
 				)}
 			</div>
@@ -431,53 +680,107 @@ const Dashboard = ({ user, onLogout }) => {
 			{label}
 		</div>
 	);
-	const handleFinishTest = async (userAnswers) => {
-		if (!startedTest) return;
-
+	// --- ЗАВЕРШЕНИЕ ТЕСТА (С ДЕТАЛЬНЫМ ОТЧЕТОМ ОБ ОШИБКЕ) ---
+	const handleFinishTest = async (answers) => {
 		setIsLoading(true);
-		const attemptId = startedTest.attemptId;
-
 		try {
-			// 1. Отправляем все ответы
-			// userAnswers это объект { [questionId]: answerIndex }
-			const promises = Object.entries(userAnswers).map(([qId, ansIdx]) => {
-				return fetch('/api/test/answer', {
+			// 1. Отправляем ответы
+			// (Используем Promise.allSettled, чтобы один сбой не ломал всё)
+			await Promise.allSettled(Object.entries(answers).map(([qId, idx]) =>
+				fetch('/api/test/answer', {
 					method: 'POST',
-					headers: { 'Content-Type': 'application/json' },
-					body: JSON.stringify({
-						attemptId: attemptId,
-						questionId: qId,
-						answerIndex: ansIdx
-					})
-				});
-			});
+					body: JSON.stringify({ attemptId: startedTest.attemptId, questionId: qId, answerIndex: idx }),
+					headers: { 'Content-Type': 'application/json' }
+				})
+			));
 
-			await Promise.all(promises);
-
-			// 2. Завершаем попытку
-			await fetch('/api/test/complete', {
+			// 2. Завершаем
+			const res = await fetch('/api/test/complete', {
 				method: 'POST',
-				headers: { 'Content-Type': 'application/json' },
-				body: JSON.stringify({ attemptId })
+				body: JSON.stringify({ attemptId: startedTest.attemptId }),
+				headers: { 'Content-Type': 'application/json' }
 			});
 
-			alert("Тест завершен!");
-			setStartedTest(null);
+			const text = await res.text(); // Сначала читаем как текст
+			console.log("Ответ сервера (Complete):", text);
 
-			// 3. Обновляем данные на странице (чтобы оценка появилась)
-			// Трюк: переключаем вкладку туда-сюда или вызываем fetchCourses (если вынесем его)
-			// Самый простой способ без рефакторинга - релоад, но лучше просто закрыть тест.
-			window.location.reload();
+			let data;
+			try {
+				data = JSON.parse(text); // Пробуем превратить в JSON
+			} catch (e) {
+				throw new Error("Сервер вернул не JSON: " + text);
+			}
+
+			if (data.status === 'success') {
+				alert(`🎉 Тест завершен!\nРезультат: ${data.score} из ${data.max_score || '?'}`);
+				setStartedTest(null);
+				fetchCourses(); // Обновляем историю
+			} else {
+				alert("Ошибка при завершении: " + (data.error || text));
+			}
 
 		} catch (e) {
 			console.error(e);
-			alert("Ошибка при сохранении ответов");
+			alert("Критическая ошибка сохранения: " + e.message);
 		} finally {
 			setIsLoading(false);
 		}
 	};
 	return (
 		<div style={styles.container}>
+			{attemptsModal && (
+				<div style={{
+					position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.35)',
+					display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 9999
+				}}>
+					<div style={{
+						width: '700px', maxWidth: '92vw', maxHeight: '80vh', overflow: 'auto',
+						background: 'white', borderRadius: '16px', padding: '20px', border: '1px solid #e5e7eb'
+					}}>
+						<div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+							<h3 style={{ margin: 0 }}>
+								Попытки: {attemptsModal.testName}
+							</h3>
+							<button
+								onClick={() => setAttemptsModal(null)}
+								style={{ border: 'none', background: '#f3f4f6', borderRadius: '10px', padding: '8px 12px', cursor: 'pointer' }}
+							>
+								Закрыть
+							</button>
+						</div>
+
+						<div style={{ marginTop: '14px' }}>
+							{attemptsModal.data.length === 0 ? (
+								<p style={{ color: '#666' }}>Попыток пока нет.</p>
+							) : (
+								<table style={{ width: '100%', borderCollapse: 'collapse' }}>
+									<thead>
+										<tr style={{ textAlign: 'left', borderBottom: '2px solid #eee' }}>
+											<th style={{ padding: '10px' }}>Student ID</th>
+											<th style={{ padding: '10px' }}>Score</th>
+											<th style={{ padding: '10px' }}>%</th>
+											<th style={{ padding: '10px' }}>Status</th>
+										</tr>
+									</thead>
+									<tbody>
+										{attemptsModal.data.map((a, idx) => (
+											<tr key={idx} style={{ borderBottom: '1px solid #eee' }}>
+												<td style={{ padding: '10px', fontSize: '13px' }}>{a.student_id}</td>
+												<td style={{ padding: '10px' }}>
+													{a.score ?? "-"} / {a.max_score ?? "-"}
+												</td>
+												<td style={{ padding: '10px' }}>{a.percentage ?? "-"}</td>
+												<td style={{ padding: '10px' }}>{a.status}</td>
+											</tr>
+										))}
+									</tbody>
+								</table>
+							)}
+						</div>
+					</div>
+				</div>
+			)}
+
 			{startedTest && (
 				<QuestionView
 					testName={startedTest.name}
@@ -502,7 +805,15 @@ const Dashboard = ({ user, onLogout }) => {
 
 				<nav style={{ flex: 1 }}>
 					<NavItem id="home" label="Дисциплины" icon="🏠" />
+					<div onClick={() => setActiveTab('results')} style={{
+						...styles.navItem,
+						backgroundColor: activeTab === 'results' ? '#f3f4f6' : 'transparent',
+						color: activeTab === 'results' ? '#4f46e5' : '#4b5563',
+					}}>
+						<span style={{ marginRight: '12px' }}>📊</span> История оценок
+					</div>
 					<NavItem id="profile" label="Профиль" icon="👤" />
+					
 
 					{isAdmin && (
 						<>
@@ -527,6 +838,7 @@ const Dashboard = ({ user, onLogout }) => {
 					<div>
 						<h2 style={styles.pageTitle}>
 							{activeTab === 'home' && "Мои дисциплины"}
+							{activeTab === 'results' && "Моя успеваемость"}
 							{activeTab === 'profile' && "Настройки профиля"}
 							{activeTab === 'users' && "Управление пользователями"}
 						</h2>
@@ -542,6 +854,11 @@ const Dashboard = ({ user, onLogout }) => {
 					)}
 				</header>
 
+
+
+					
+
+
 				<section style={styles.contentArea}>
 					{/* ВКЛАДКА КУРСОВ */}
 					{activeTab === 'home' && (
@@ -550,6 +867,49 @@ const Dashboard = ({ user, onLogout }) => {
 								courses.map((course, idx) => <CourseCard key={course.course_id || idx} course={course} />)
 							) : (
 								<p>Курсы не найдены или загрузка...</p>
+							)}
+						</div>
+					)}
+
+					{/* --- ИСТОРИЯ ОЦЕНОК (НОВЫЙ БЛОК) --- */}
+					{activeTab === 'results' && (
+						<div style={styles.grid}>
+							{courses.length === 0 ? (
+								<div style={{ gridColumn: '1/-1', textAlign: 'center', color: '#888' }}>
+									<p>Загрузка данных или история пуста...</p>
+								</div>
+							) : (
+								courses.map(course => (
+									<div key={course.course_id || course.id} style={styles.card}>
+										<div style={{ borderBottom: '1px solid #eee', paddingBottom: '10px', marginBottom: '15px' }}>
+											<h3 style={{ margin: 0, color: '#111827' }}>{course.course_name || course.name}</h3>
+										</div>
+
+										{course.grades && course.grades.length > 0 ? (
+											<div style={{ display: 'flex', flexDirection: 'column' }}>
+												{course.grades.map((g, idx) => (
+													<div key={idx} style={styles.resultItem}>
+														<div>
+															<div style={{ fontWeight: '600', color: '#374151' }}>{g.test_title}</div>
+														</div>
+														<div style={{ textAlign: 'right' }}>
+															<div style={styles.scoreBadge(g.percentage)}>
+																{g.score} / {g.max_score}
+															</div>
+															<div style={styles.dateText}>
+																{g.percentage}%
+															</div>
+														</div>
+													</div>
+												))}
+											</div>
+										) : (
+											<p style={{ color: '#9ca3af', fontStyle: 'italic', textAlign: 'center', margin: '20px 0' }}>
+												Нет попыток прохождения тестов.
+											</p>
+										)}
+									</div>
+								))
 							)}
 						</div>
 					)}
@@ -593,32 +953,83 @@ const Dashboard = ({ user, onLogout }) => {
 					)}
 
 					{/* ВКЛАДКА ПОЛЬЗОВАТЕЛЕЙ (АДМИН) */}
+					{/* Вкладка ПОЛЬЗОВАТЕЛЕЙ (Таблица) */}
 					{activeTab === 'users' && isAdmin && (
 						<div style={styles.card}>
-							<h3>Список пользователей (из БД)</h3>
-							{userList.length > 0 ? (
-								<table style={{ width: '100%', borderCollapse: 'collapse' }}>
-									<thead>
-										<tr style={{ textAlign: 'left', borderBottom: '1px solid #eee' }}>
-											<th style={{ padding: '10px' }}>ID</th>
-											<th style={{ padding: '10px' }}>Инфо</th>
-										</tr>
-									</thead>
-									<tbody>
-										{/* Тут рендерим сырой JSON или разбираем структуру, если знаем формат */}
-										{/* Для теста просто выводим JSON строки, так как я не вижу точного формата вывода C++ для VIEW_ALL_USERS */}
-										<tr>
-											<td colSpan="2">
-												<pre style={{ background: '#f4f4f4', padding: '10px', borderRadius: '5px' }}>
-													{JSON.stringify(userList, null, 2)}
-												</pre>
+							<h3 style={{ marginTop: 0 }}>Управление пользователями</h3>
+							<table style={{ width: '100%', borderCollapse: 'collapse', marginTop: '10px' }}>
+								<thead>
+									<tr style={{ borderBottom: '2px solid #eee', textAlign: 'left' }}>
+										<th style={{ padding: '10px' }}>ID / Логин</th>
+										<th style={{ padding: '10px' }}>Имя</th>
+										<th style={{ padding: '10px' }}>Роль</th>
+										<th style={{ padding: '10px' }}>Действия</th>
+										<th style={{ padding: '10px' }}>Блок</th>
+
+									</tr>
+								</thead>
+								<tbody>
+									{userList.map(u => (
+										<tr key={u.id} style={{ borderBottom: '1px solid #eee' }}>
+											<td style={{ padding: '10px', fontSize: '13px', color: '#555' }}>
+												{u.id}<br />
+												<b>{u.login}</b>
+											</td>
+											<td style={{ padding: '10px' }}>
+												{u.first_name} {u.last_name}
+											</td>
+											<td style={{ padding: '10px' }}>
+												<span style={{
+													backgroundColor: u.role === 'Admin' ? '#fee2e2' : u.role === 'Teacher' ? '#e0e7ff' : '#f3f4f6',
+													color: u.role === 'Admin' ? '#dc2626' : u.role === 'Teacher' ? '#4f46e5' : '#374151',
+													padding: '4px 8px', borderRadius: '4px', fontSize: '12px', fontWeight: 'bold'
+												}}>
+													{u.role}
+												</span>
+											</td>
+											<td style={{ padding: '10px' }}>
+												{(() => {
+													const isBlocked = !!blockedMap[u.id];
+													return (
+														<button
+															disabled={isLoading}
+															onClick={() => handleToggleBlocked(u.id, !isBlocked)}
+															style={{
+																padding: '6px 10px',
+																borderRadius: '8px',
+																border: '1px solid #ddd',
+																cursor: 'pointer',
+																backgroundColor: isBlocked ? '#dc2626' : '#f3f4f6',
+																color: isBlocked ? 'white' : '#111827',
+																fontWeight: 700
+															}}
+															title={isBlocked ? "Разблокировать" : "Заблокировать"}
+														>
+															{isBlocked ? "Разблокировать" : "Заблокировать"}
+														</button>
+													);
+												})()}
+											</td>
+
+											<td style={{ padding: '10px' }}>
+												<select
+													defaultValue=""
+													onChange={(e) => {
+														if (e.target.value) handleRoleChange(u.id, e.target.value);
+														e.target.value = ""; // Сброс селекта
+													}}
+													style={{ padding: '5px', borderRadius: '4px', border: '1px solid #ddd' }}
+												>
+													<option value="" disabled>Сменить роль...</option>
+													<option value="Student">Студент</option>
+													<option value="Teacher">Учитель</option>
+													<option value="Admin">Админ</option>
+												</select>
 											</td>
 										</tr>
-									</tbody>
-								</table>
-							) : (
-								<p>Загрузка списка пользователей...</p>
-							)}
+									))}
+								</tbody>
+							</table>
 						</div>
 					)}
 				</section>
@@ -633,6 +1044,33 @@ const styles = {
 	sidebar: {
 		width: '260px', backgroundColor: '#fff', borderRight: '1px solid #e5e7eb',
 		display: 'flex', flexDirection: 'column', padding: '24px 16px'
+	},
+	resultItem: {
+		padding: '16px',
+		backgroundColor: '#f8fafc',
+		borderRadius: '10px',
+		border: '1px solid #e2e8f0',
+		marginBottom: '10px',
+		display: 'flex',
+		justifyContent: 'space-between',
+		alignItems: 'center',
+		transition: 'transform 0.2s',
+	},
+
+	scoreBadge: (percent) => ({
+		fontWeight: 'bold',
+		color: percent >= 50 ? '#059669' : '#dc2626', // Зеленый если >50%, красный если меньше
+		backgroundColor: percent >= 50 ? '#d1fae5' : '#fee2e2',
+		padding: '6px 12px',
+		borderRadius: '20px',
+		fontSize: '14px'
+	}),
+
+	dateText: {
+		fontSize: '12px',
+		color: '#64748b',
+		marginTop: '4px',
+		textAlign: 'right'
 	},
 	logo: { fontSize: '20px', fontWeight: '800', color: '#4f46e5', marginBottom: '32px', display: 'flex', alignItems: 'center' },
 	logoIcon: {
