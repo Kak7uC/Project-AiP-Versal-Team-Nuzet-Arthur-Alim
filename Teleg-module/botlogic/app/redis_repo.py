@@ -53,7 +53,6 @@ class RedisRepo:
         """Ищем по всем ключам (chat_id) в Redis и возвращаем только нужный статус.
         """
         async for key in self.r.scan_iter(match="*"):
-            # ключи у нас — chat_id
             try:
                 chat_id = int(key)
             except Exception:

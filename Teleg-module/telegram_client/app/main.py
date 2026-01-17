@@ -12,14 +12,8 @@ logging.basicConfig(level=logging.INFO)
 
 
 async def tick_loop(bot: Bot, api: BotLogicAPI):
-    """
-    По сценарию Telegram Client периодически:
-    - проверяет завершение логина (tick_check_login)
-    - проверяет уведомления (tick_notifications)
-    """
     while True:
         try:
-            # 1) check_login
             items = await api.tick_check_login()
             for it in items:
                 chat_id = it.get("chat_id")
@@ -27,7 +21,6 @@ async def tick_loop(bot: Bot, api: BotLogicAPI):
                 if chat_id and msg:
                     await bot.send_message(chat_id, msg)
 
-            # 2) notifications
             items = await api.tick_notifications()
             for it in items:
                 chat_id = it.get("chat_id")

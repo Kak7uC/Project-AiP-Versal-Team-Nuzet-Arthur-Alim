@@ -23,3 +23,23 @@ class CoreClient:
 
     async def view_own_name(self, user_id: str, jwt_token: str) -> Tuple[int, str]:
         return await self.task(user_id, jwt_token, "VIEW_OWN_NAME")
+
+    async def get_notifications(self, jwt_token: str) -> Tuple[int, str]:
+        if self.demo_mode or not self.base_url:
+            return 200, "{}"
+        async with httpx.AsyncClient(timeout=self.timeout) as client:
+            r = await client.get(
+                f"{self.base_url}/notification",
+                headers={"Authorization": f"Bearer {jwt_token}"},
+            )
+            return r.status_code, r.text
+
+    async def clear_notifications(self, jwt_token: str) -> Tuple[int, str]:
+        if self.demo_mode or not self.base_url:
+            return 200, "{}"
+        async with httpx.AsyncClient(timeout=self.timeout) as client:
+            r = await client.post(
+                f"{self.base_url}/notification/clear",
+                headers={"Authorization": f"Bearer {jwt_token}"},
+            )
+            return r.status_code, r.text
