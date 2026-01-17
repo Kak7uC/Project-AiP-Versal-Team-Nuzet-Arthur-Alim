@@ -67,7 +67,6 @@ bool TOKEN_APPROVED(string ID, string JWT) {
             return false;
         }
         
-        // Проверяем expiration
         try {
             auto exp_claim = decoded.get_payload_claim("exp");
             if (exp_claim.get_type() == jwt::json::type::number) {
@@ -103,13 +102,10 @@ bool TOKEN_APPROVED(string ID, string JWT) {
     }
 }
 string VIEW_OWN_NAME(string ID, string JWT) {
-    cout << "\n=== VIEW_OWN_NAME called (DB Lookup) ===" << endl;
-    
     if (!TOKEN_APPROVED(ID, JWT)) {
         return "ERROR 401";
     }
     
-    // ВМЕСТО ЧТЕНИЯ ТОКЕНА, ДЕЛАЕМ ЗАПРОС В GO ЗА СВЕЖИМИ ДАННЫМИ
     try {
         httplib::Client client(GO_SERVER_URL.c_str());
         client.set_connection_timeout(5);
@@ -119,17 +115,15 @@ string VIEW_OWN_NAME(string ID, string JWT) {
             {"Authorization", "Bearer " + JWT}
         };
         
-        // Запрашиваем имя для самого себя (ID)
         httplib::Params params = {
             {"ID", ID},
         };
         
-        // Используем тот же эндпоинт, что и для просмотра других
         auto response = client.Get("/api/user/name", params, headers);
         
         if (response) {
             if (response->status == 200) {
-                return response->body; // Возвращаем свежее имя из БД
+                return response->body;
             } else {
                 return "ERROR " + to_string(response->status) + ": " + response->body;
             }
@@ -141,6 +135,7 @@ string VIEW_OWN_NAME(string ID, string JWT) {
         return "EXCEPTION: " + string(e.what());
     }
 }
+
 string VIEW_OTHER_NAME(string ID, string TARGET_ID, string JWT) {
     cout << "\n=== VIEW_OTHER_NAME called ===" << endl;
     
@@ -516,6 +511,7 @@ string EDIT_BLOCKED(string ID, string TARGET_ID, string ACTION, string JWT){
         return "EXCEPTION: " + string(e.what());
     } catch (...) {
         return "ERROR";
+    
     }
 }
 string VIEW_OWN_DATA(string ID, string JWT) {
@@ -527,197 +523,140 @@ string VIEW_OWN_DATA(string ID, string JWT) {
         return "ERROR 403";
     }
     
-    const char* conninfo = 
-        "host=ep-snowy-truth-ah9dp5ai-pooler.c-3.us-east-1.aws.neon.tech "
-        "port=5432 "
-        "dbname=neondb "
-        "user=neondb_owner "
-        "password=npg_tTdv0G5elYum "
-        "sslmode=require";
-
-    PGconn* conn = PQconnectdb(conninfo);
-    
-    if (PQstatus(conn) != CONNECTION_OK) {
-        string error = PQerrorMessage(conn);
-        PQfinish(conn);
-        return "{\"error\": \"Database connection failed: " + error + "\"}";
-    }
+    PGconn* conn = PQconnectdb("host=ep-snowy-truth-ah9dp5ai-pooler.c-3.us-east-1.aws.neon.tech port=5432 dbname=neondb user=neondb_owner password=npg_tTdv0G5elYum sslmode=require");
+    if (PQstatus(conn) != CONNECTION_OK) { PQfinish(conn); return "{\"error\":\"DB fail\"}"; }
     
     stringstream json;
-    json << "{";
-    json << "\"user_id\": \"" << ID << "\",";
-    json << "\"courses\": [";
+    json << "{\"user_id\":\"" << ID << "\", \"courses\":[";
     
-    const char* course_query = 
-        "SELECT c.id, c.name FROM courses c "
-        "JOIN user_courses uc ON c.id = uc.course_id "
-        "WHERE uc.user_id = $1";
-    
-    const char* course_params[1] = { ID.c_str() };
-    
-    PGresult* course_res = PQexecParams(conn, course_query,
-        1, NULL, course_params, NULL, NULL, 0);
-    
-    if (PQresultStatus(course_res) != PGRES_TUPLES_OK) {
-        string error = PQresultErrorMessage(course_res);
-        PQclear(course_res);
-        PQfinish(conn);
-        return "{\"error\": \"Query failed: " + error + "\"}";
-    }
-    
-    int num_courses = PQntuples(course_res);
-    
-    for (int i = 0; i < num_courses; i++) {
+    // 1. Курсы (где я учитель ИЛИ где я студент)
+    const char* p[1] = {ID.c_str()};
+    PGresult* c_res = PQexecParams(conn,
+        "SELECT id, name FROM courses WHERE teacher_id = $1 AND NOT is_deleted "
+        "UNION "
+        "SELECT c.id, c.name FROM courses c JOIN student_courses sc ON c.id = sc.course_id WHERE sc.student_id = $1 AND NOT c.is_deleted",
+        1, NULL, p, NULL, NULL, 0);
+        
+    int c_count = PQntuples(c_res);
+    for(int i=0; i<c_count; i++) {
         if (i > 0) json << ",";
+        string c_id = PQgetvalue(c_res, i, 0);
+        string c_name = PQgetvalue(c_res, i, 1);
         
-        string course_id = PQgetvalue(course_res, i, 0);
-        string course_name = PQgetvalue(course_res, i, 1);
+        json << "{\"course_id\":\"" << c_id << "\", \"course_name\":\"" << c_name << "\",";
         
-        json << "{";
-        json << "\"course_id\": \"" << course_id << "\",";
-        json << "\"course_name\": \"" << course_name << "\",";
-        
-        json << "\"tests\": [";
-        
-        const char* test_params[1] = { course_id.c_str() };
-        const char* test_query = 
-            "SELECT id, title FROM tests WHERE course_id = $1";
-        
-        PGresult* test_res = PQexecParams(conn, test_query,
-            1, NULL, test_params, NULL, NULL, 0);
-        
-        if (PQresultStatus(test_res) == PGRES_TUPLES_OK) {
-            int num_tests = PQntuples(test_res);
-            
-            for (int j = 0; j < num_tests; j++) {
-                if (j > 0) json << ",";
-                
-                json << "{";
-                json << "\"test_id\": \"" << PQgetvalue(test_res, j, 0) << "\",";
-                json << "\"test_title\": \"" << PQgetvalue(test_res, j, 1) << "\"";
-                json << "}";
-            }
+        // 2. Тесты
+        const char* t_p[1] = {c_id.c_str()};
+        PGresult* t_res = PQexecParams(conn, "SELECT id, title FROM tests WHERE course_id = $1 AND NOT is_deleted", 1, NULL, t_p, NULL, NULL, 0);
+        json << "\"tests\":[";
+        int t_count = PQntuples(t_res);
+        for(int j=0; j<t_count; j++) {
+            if(j>0) json << ",";
+            json << "{\"test_id\":\"" << PQgetvalue(t_res, j, 0) << "\", \"test_title\":\"" << PQgetvalue(t_res, j, 1) << "\"}";
         }
-        PQclear(test_res);
+        PQclear(t_res);
         json << "],";
         
-        json << "\"grades\": [";
-        
-        const char* grade_params[2] = { ID.c_str(), course_id.c_str() };
-        const char* grade_query = 
-            "SELECT g.id, g.test_id, t.title, g.score, g.max_score "
-            "FROM grades g "
-            "JOIN tests t ON g.test_id = t.id "
-            "WHERE g.user_id = $1 AND g.course_id = $2";
-        
-        PGresult* grade_res = PQexecParams(conn, grade_query,
-            2, NULL, grade_params, NULL, NULL, 0);
-        
-        if (PQresultStatus(grade_res) == PGRES_TUPLES_OK) {
-            int num_grades = PQntuples(grade_res);
+        // 3. Оценки (ИСПРАВЛЕНО: COALESCE для защиты от null)
+        const char* g_p[2] = {ID.c_str(), c_id.c_str()};
+        PGresult* g_res = PQexecParams(conn,
+            "SELECT t.title, COALESCE(a.score, 0), COALESCE(a.max_score, 0), COALESCE(a.percentage, 0) "
+            "FROM attempts a "
+            "JOIN tests t ON a.test_id = t.id "
+            "WHERE a.student_id = $1 AND t.course_id = $2 AND a.status = 'completed' "
+            "ORDER BY a.completed_at DESC",
+            2, NULL, g_p, NULL, NULL, 0);
             
-            for (int k = 0; k < num_grades; k++) {
-                if (k > 0) json << ",";
-                
-                json << "{";
-                json << "\"grade_id\": \"" << PQgetvalue(grade_res, k, 0) << "\",";
-                json << "\"test_id\": \"" << PQgetvalue(grade_res, k, 1) << "\",";
-                json << "\"test_title\": \"" << PQgetvalue(grade_res, k, 2) << "\",";
-                json << "\"score\": " << (PQgetvalue(grade_res, k, 3) ? PQgetvalue(grade_res, k, 3) : "null") << ",";
-                json << "\"max_score\": " << (PQgetvalue(grade_res, k, 4) ? PQgetvalue(grade_res, k, 4) : "100");
-                json << "}";
-            }
+        json << "\"grades\":[";
+        int g_count = PQntuples(g_res);
+        for(int k=0; k<g_count; k++) {
+            if(k>0) json << ",";
+            json << "{"
+                 << "\"test_title\":\"" << PQgetvalue(g_res, k, 0) << "\","
+                 << "\"score\":" << PQgetvalue(g_res, k, 1) << ","
+                 << "\"max_score\":" << PQgetvalue(g_res, k, 2) << ","
+                 << "\"percentage\":" << PQgetvalue(g_res, k, 3) 
+                 << "}";
         }
-        PQclear(grade_res);
+        PQclear(g_res);
         json << "]";
         
         json << "}";
     }
-    
-    PQclear(course_res);
+    PQclear(c_res);
     PQfinish(conn);
-    
-    json << "]";
-    json << "}";
-    
+    json << "]}";
     return json.str();
 }
 string VIEW_OTHER_DATA(string ID, string TARGET_ID, string JWT) {
     if (!TOKEN_APPROVED(ID, JWT)) {
         return "ERROR 401";
     }
-    if (!checkPermission(JWT,"user:data:read:others")){
+    if (!checkPermission(JWT, "user:data:read:others") && !checkPermission(JWT, "user:data:read")) {
         return "ERROR 403";
     }
     
-    PGconn* conn = PQconnectdb(
-        "host=ep-snowy-truth-ah9dp5ai-pooler.c-3.us-east-1.aws.neon.tech "
-        "port=5432 "
-        "dbname=neondb "
-        "user=neondb_owner "
-        "password=npg_tTdv0G5elYum "
-        "sslmode=require"
-    );
+    PGconn* conn = PQconnectdb("host=ep-snowy-truth-ah9dp5ai-pooler.c-3.us-east-1.aws.neon.tech port=5432 dbname=neondb user=neondb_owner password=npg_tTdv0G5elYum sslmode=require");
+    if (PQstatus(conn) != CONNECTION_OK) { PQfinish(conn); return "{\"error\":\"DB fail\"}"; }
     
-    if (PQstatus(conn) != CONNECTION_OK) {
-        string error = PQerrorMessage(conn);
-        PQfinish(conn);
-        return "{\"error\": \"DB connection failed: " + error + "\"}";
-    }
-
     stringstream json;
-    json << "{\"user_id\":\"" << TARGET_ID << "\",\"courses\":[";
-    const char* params[1] = {TARGET_ID.c_str()};
-    PGresult* res = PQexecParams(conn,
-        "SELECT c.id, c.name FROM courses c JOIN user_courses uc ON c.id = uc.course_id WHERE uc.user_id = $1",
-        1, NULL, params, NULL, NULL, 0);
+    json << "{\"user_id\":\"" << TARGET_ID << "\", \"courses\":[";
     
-    if (PQresultStatus(res) == PGRES_TUPLES_OK) {
-        int num = PQntuples(res);
-        for (int i = 0; i < num; i++) {
-            if (i > 0) json << ",";
-            
-            string course_id = PQgetvalue(res, i, 0);
-            string course_name = PQgetvalue(res, i, 1);
-            
-            json << "{\"course_id\":\"" << course_id << "\",\"course_name\":\"" << course_name << "\",";
-            
-            json << "\"tests\":[";
-            const char* test_params[2] = {TARGET_ID.c_str(), course_id.c_str()};
-            PGresult* test_res = PQexecParams(conn,
-                "SELECT id, title FROM tests WHERE course_id = $2",
-                2, NULL, test_params, NULL, NULL, 0);
-            
-            if (PQresultStatus(test_res) == PGRES_TUPLES_OK) {
-                int test_num = PQntuples(test_res);
-                for (int j = 0; j < test_num; j++) {
-                    if (j > 0) json << ",";
-                    json << "{\"test_id\":\"" << PQgetvalue(test_res, j, 0) << "\",\"title\":\"" << PQgetvalue(test_res, j, 1) << "\"}";
-                }
-            }
-            PQclear(test_res);
-            json << "],";
-            
-            json << "\"grades\":[";
-            PGresult* grade_res = PQexecParams(conn,
-                "SELECT g.test_id, t.title, g.grade FROM grades g JOIN tests t ON g.test_id = t.id WHERE g.user_id = $1 AND g.course_id = $2",
-                2, NULL, test_params, NULL, NULL, 0);
-            
-            if (PQresultStatus(grade_res) == PGRES_TUPLES_OK) {
-                int grade_num = PQntuples(grade_res);
-                for (int k = 0; k < grade_num; k++) {
-                    if (k > 0) json << ",";
-                    json << "{\"test_id\":\"" << PQgetvalue(grade_res, k, 0) << "\",\"title\":\"" << PQgetvalue(grade_res, k, 1) << "\",\"grade\":" << PQgetvalue(grade_res, k, 2) << "}";
-                }
-            }
-            PQclear(grade_res);
-            json << "]";
-            
-            json << "}";
+    // 3. Получаем курсы ЦЕЛЕВОГО пользователя (TARGET_ID)
+    const char* p[1] = {TARGET_ID.c_str()};
+    PGresult* c_res = PQexecParams(conn,
+        "SELECT id, name FROM courses WHERE teacher_id = $1 "
+        "UNION "
+        "SELECT c.id, c.name FROM courses c JOIN student_courses sc ON c.id = sc.course_id WHERE sc.student_id = $1",
+        1, NULL, p, NULL, NULL, 0);
+        
+    int c_count = PQntuples(c_res);
+    
+    for(int i=0; i<c_count; i++) {
+        if (i > 0) json << ",";
+        string c_id = PQgetvalue(c_res, i, 0);
+        string c_name = PQgetvalue(c_res, i, 1);
+        
+        json << "{\"course_id\":\"" << c_id << "\", \"course_name\":\"" << c_name << "\",";
+        
+        const char* t_p[1] = {c_id.c_str()};
+        PGresult* t_res = PQexecParams(conn, "SELECT id, title FROM tests WHERE course_id = $1 AND NOT is_deleted", 1, NULL, t_p, NULL, NULL, 0);
+        json << "\"tests\":[";
+        int t_count = PQntuples(t_res);
+        for(int j=0; j<t_count; j++) {
+            if(j>0) json << ",";
+            json << "{\"test_id\":\"" << PQgetvalue(t_res, j, 0) << "\", \"test_title\":\"" << PQgetvalue(t_res, j, 1) << "\"}";
         }
+        PQclear(t_res);
+        json << "],";
+        
+        // Получаем ОЦЕНКИ ЦЕЛЕВОГО пользователя
+        const char* g_p[2] = {TARGET_ID.c_str(), c_id.c_str()};
+        PGresult* g_res = PQexecParams(conn,
+            "SELECT t.title, a.score, a.max_score, a.percentage, a.completed_at "
+            "FROM attempts a "
+            "JOIN tests t ON a.test_id = t.id "
+            "WHERE a.student_id = $1 AND t.course_id = $2 AND a.status = 'completed' "
+            "ORDER BY a.completed_at DESC",
+            2, NULL, g_p, NULL, NULL, 0);
+            
+        json << "\"grades\":[";
+        int g_count = PQntuples(g_res);
+        for(int k=0; k<g_count; k++) {
+            if(k>0) json << ",";
+            json << "{"
+                 << "\"test_title\":\"" << PQgetvalue(g_res, k, 0) << "\","
+                 << "\"score\":" << PQgetvalue(g_res, k, 1) << ","
+                 << "\"max_score\":" << PQgetvalue(g_res, k, 2) << ","
+                 << "\"percentage\":" << PQgetvalue(g_res, k, 3) 
+                 << "}";
+        }
+        PQclear(g_res);
+        json << "]";
+        
+        json << "}";
     }
-    
-    PQclear(res);
+    PQclear(c_res);
     PQfinish(conn);
     
     json << "]}";
@@ -778,7 +717,12 @@ string VIEW_ALL_COURSES(string ID, string JWT) {
         return "ERROR 401";
     }
     
-    PGconn* conn = PQconnectdb("host=...");
+    PGconn* conn = PQconnectdb("host=ep-snowy-truth-ah9dp5ai-pooler.c-3.us-east-1.aws.neon.tech "
+        "port=5432 "
+        "dbname=neondb "
+        "user=neondb_owner "
+        "password=npg_tTdv0G5elYum "
+        "sslmode=require");
     if (PQstatus(conn) != CONNECTION_OK) return "{\"error\":\"DB fail\"}";
     
     stringstream json;
@@ -805,7 +749,12 @@ string VIEW_COURSE_INFO(string ID, string JWT, string COURSE_ID) {
         return "ERROR 401";
     }
     
-    PGconn* conn = PQconnectdb("host=...");
+    PGconn* conn = PQconnectdb("host=ep-snowy-truth-ah9dp5ai-pooler.c-3.us-east-1.aws.neon.tech "
+        "port=5432 "
+        "dbname=neondb "
+        "user=neondb_owner "
+        "password=npg_tTdv0G5elYum "
+        "sslmode=require");
     if (PQstatus(conn) != CONNECTION_OK) return "{\"error\":\"DB fail\"}";
     
     const char* params[1] = {COURSE_ID.c_str()};
@@ -837,10 +786,14 @@ string EDIT_COURSE_INFO(string ID, string JWT, string COURSE_ID, string NEW_NAME
         return "ERROR 403";
     }
     
-    PGconn* conn = PQconnectdb("host=...");
+    PGconn* conn = PQconnectdb("host=ep-snowy-truth-ah9dp5ai-pooler.c-3.us-east-1.aws.neon.tech "
+        "port=5432 "
+        "dbname=neondb "
+        "user=neondb_owner "
+        "password=npg_tTdv0G5elYum "
+        "sslmode=require");
     if (PQstatus(conn) != CONNECTION_OK) return "{\"error\":\"DB fail\"}";
     
-    // Проверяем, является ли пользователь преподавателем курса
     const char* check_params[1] = {COURSE_ID.c_str()};
     PGresult* check_res = PQexecParams(conn,
         "SELECT teacher_id FROM courses WHERE id = $1 AND NOT is_deleted",
@@ -889,7 +842,12 @@ string VIEW_COURSE_TESTS(string ID, string JWT, string COURSE_ID) {
         return "ERROR 403";
     }
     
-    PGconn* conn = PQconnectdb("host=...");
+    PGconn* conn = PQconnectdb("host=ep-snowy-truth-ah9dp5ai-pooler.c-3.us-east-1.aws.neon.tech "
+        "port=5432 "
+        "dbname=neondb "
+        "user=neondb_owner "
+        "password=npg_tTdv0G5elYum "
+        "sslmode=require");
     if (PQstatus(conn) != CONNECTION_OK) return "{\"error\":\"DB fail\"}";
     
     // Проверяем доступ
@@ -919,7 +877,7 @@ string VIEW_COURSE_TESTS(string ID, string JWT, string COURSE_ID) {
         
         if (PQresultStatus(enroll_res) == PGRES_TUPLES_OK) {
             int enrolled = atoi(PQgetvalue(enroll_res, 0, 0));
-            has_access = (enrolled > 0);
+            has_access = (enrolled > 0) || checkPermission(JWT, "course:test:read:self");
         }
         PQclear(enroll_res);
     }
@@ -958,7 +916,12 @@ string CHECK_TEST_ACTIVE(string ID, string JWT, string COURSE_ID, string TEST_ID
         return "ERROR 403";
     }
     
-    PGconn* conn = PQconnectdb("host=...");
+    PGconn* conn = PQconnectdb("host=ep-snowy-truth-ah9dp5ai-pooler.c-3.us-east-1.aws.neon.tech "
+        "port=5432 "
+        "dbname=neondb "
+        "user=neondb_owner "
+        "password=npg_tTdv0G5elYum "
+        "sslmode=require");
     if (PQstatus(conn) != CONNECTION_OK) return "{\"error\":\"DB fail\"}";
     
     // Проверяем доступ
@@ -987,7 +950,7 @@ string CHECK_TEST_ACTIVE(string ID, string JWT, string COURSE_ID, string TEST_ID
         
         if (PQresultStatus(enroll_res) == PGRES_TUPLES_OK) {
             int enrolled = atoi(PQgetvalue(enroll_res, 0, 0));
-            has_access = (enrolled > 0);
+            has_access = (enrolled > 0) || checkPermission(JWT, "course:test:write:own");
         }
         PQclear(enroll_res);
     }
@@ -1024,7 +987,12 @@ string TOGGLE_TEST_ACTIVE(string ID, string JWT, string COURSE_ID, string TEST_I
         return "ERROR 403";
     }
     
-    PGconn* conn = PQconnectdb("host=...");
+    PGconn* conn = PQconnectdb("host=ep-snowy-truth-ah9dp5ai-pooler.c-3.us-east-1.aws.neon.tech "
+        "port=5432 "
+        "dbname=neondb "
+        "user=neondb_owner "
+        "password=npg_tTdv0G5elYum "
+        "sslmode=require");
     if (PQstatus(conn) != CONNECTION_OK) return "{\"error\":\"DB fail\"}";
     
     // Проверяем, является ли преподавателем курса
@@ -1082,7 +1050,12 @@ string CREATE_TEST(string ID, string JWT, string COURSE_ID, string TITLE) {
         return "ERROR 403";
     }
     
-    PGconn* conn = PQconnectdb("host=...");
+    PGconn* conn = PQconnectdb("host=ep-snowy-truth-ah9dp5ai-pooler.c-3.us-east-1.aws.neon.tech "
+        "port=5432 "
+        "dbname=neondb "
+        "user=neondb_owner "
+        "password=npg_tTdv0G5elYum "
+        "sslmode=require");
     if (PQstatus(conn) != CONNECTION_OK) return "{\"error\":\"DB fail\"}";
     
     // Проверяем, является ли преподавателем курса
@@ -1132,7 +1105,12 @@ string DELETE_TEST(string ID, string JWT, string COURSE_ID, string TEST_ID) {
     if (!checkPermission(JWT, "test:quest:del:own")) {
         return "ERROR 403";
     }
-    PGconn* conn = PQconnectdb("host=...");
+    PGconn* conn = PQconnectdb("host=ep-snowy-truth-ah9dp5ai-pooler.c-3.us-east-1.aws.neon.tech "
+        "port=5432 "
+        "dbname=neondb "
+        "user=neondb_owner "
+        "password=npg_tTdv0G5elYum "
+        "sslmode=require");
     if (PQstatus(conn) != CONNECTION_OK) return "{\"error\":\"DB fail\"}";
     
     // Проверяем, является ли преподавателем курса
@@ -1180,7 +1158,12 @@ string VIEW_COURSE_STUDENTS(string ID, string JWT, string COURSE_ID) {
         return "ERROR 403";
     }
     
-    PGconn* conn = PQconnectdb("host=...");
+    PGconn* conn = PQconnectdb("host=ep-snowy-truth-ah9dp5ai-pooler.c-3.us-east-1.aws.neon.tech "
+        "port=5432 "
+        "dbname=neondb "
+        "user=neondb_owner "
+        "password=npg_tTdv0G5elYum "
+        "sslmode=require");
     if (PQstatus(conn) != CONNECTION_OK) return "{\"error\":\"DB fail\"}";
     
     // Проверяем, является ли преподавателем курса
@@ -1231,7 +1214,12 @@ string ENROLL_STUDENT(string ID, string JWT, string COURSE_ID, string STUDENT_ID
         return "ERROR 403";
     }
     
-    PGconn* conn = PQconnectdb("host=...");
+    PGconn* conn = PQconnectdb("host=ep-snowy-truth-ah9dp5ai-pooler.c-3.us-east-1.aws.neon.tech "
+        "port=5432 "
+        "dbname=neondb "
+        "user=neondb_owner "
+        "password=npg_tTdv0G5elYum "
+        "sslmode=require");
     if (PQstatus(conn) != CONNECTION_OK) return "{\"error\":\"DB fail\"}";
     
     bool self_enroll = (ID == STUDENT_ID);
@@ -1287,7 +1275,12 @@ string UNENROLL_STUDENT(string ID, string JWT, string COURSE_ID, string STUDENT_
         return "ERROR 403";
     }
     
-    PGconn* conn = PQconnectdb("host=...");
+    PGconn* conn = PQconnectdb("host=ep-snowy-truth-ah9dp5ai-pooler.c-3.us-east-1.aws.neon.tech "
+        "port=5432 "
+        "dbname=neondb "
+        "user=neondb_owner "
+        "password=npg_tTdv0G5elYum "
+        "sslmode=require");
     if (PQstatus(conn) != CONNECTION_OK) return "{\"error\":\"DB fail\"}";
     
     bool self_unenroll = (ID == STUDENT_ID);
@@ -1342,7 +1335,12 @@ string DELETE_COURSE(string ID, string JWT, string COURSE_ID) {
         return "ERROR 403";
     }
     
-    PGconn* conn = PQconnectdb("host=...");
+    PGconn* conn = PQconnectdb("host=ep-snowy-truth-ah9dp5ai-pooler.c-3.us-east-1.aws.neon.tech "
+        "port=5432 "
+        "dbname=neondb "
+        "user=neondb_owner "
+        "password=npg_tTdv0G5elYum "
+        "sslmode=require");
     if (PQstatus(conn) != CONNECTION_OK) return "{\"error\":\"DB fail\"}";
     
     // Проверяем, является ли преподавателем курса
@@ -1389,7 +1387,12 @@ string VIEW_QUESTIONS(string ID, string JWT) {
         return "ERROR 403";
     }
     
-    PGconn* conn = PQconnectdb("host=...");
+    PGconn* conn = PQconnectdb("host=ep-snowy-truth-ah9dp5ai-pooler.c-3.us-east-1.aws.neon.tech "
+        "port=5432 "
+        "dbname=neondb "
+        "user=neondb_owner "
+        "password=npg_tTdv0G5elYum "
+        "sslmode=require");
     if (PQstatus(conn) != CONNECTION_OK) return "{\"error\":\"DB fail\"}";
     
     stringstream json;
@@ -1451,7 +1454,12 @@ string VIEW_QUESTION_DETAIL(string ID, string JWT, string QUESTION_ID, int VERSI
         return "ERROR 403";
     }
     
-    PGconn* conn = PQconnectdb("host=...");
+    PGconn* conn = PQconnectdb("host=ep-snowy-truth-ah9dp5ai-pooler.c-3.us-east-1.aws.neon.tech "
+        "port=5432 "
+        "dbname=neondb "
+        "user=neondb_owner "
+        "password=npg_tTdv0G5elYum "
+        "sslmode=require");
     if (PQstatus(conn) != CONNECTION_OK) return "{\"error\":\"DB fail\"}";
     
     // Проверяем доступ
@@ -1508,8 +1516,6 @@ string VIEW_QUESTION_DETAIL(string ID, string JWT, string QUESTION_ID, int VERSI
     }
     
     string options = PQgetvalue(res, 0, 2);
-    // Убираем экранирование кавычек в JSON
-    replace(options.begin(), options.end(), '\"', '\'');
     
     stringstream json;
     json << "{\"title\":\"" << PQgetvalue(res, 0, 0) << "\",";
@@ -1530,7 +1536,12 @@ string CREATE_QUESTION(string ID, string JWT, string TITLE, string TEXT, string 
         return "ERROR 403";
     }
     
-    PGconn* conn = PQconnectdb("host=...");
+    PGconn* conn = PQconnectdb("host=ep-snowy-truth-ah9dp5ai-pooler.c-3.us-east-1.aws.neon.tech "
+        "port=5432 "
+        "dbname=neondb "
+        "user=neondb_owner "
+        "password=npg_tTdv0G5elYum "
+        "sslmode=require");
     if (PQstatus(conn) != CONNECTION_OK) return "{\"error\":\"DB fail\"}";
     
     // Создаем вопрос
@@ -1568,6 +1579,54 @@ string CREATE_QUESTION(string ID, string JWT, string TITLE, string TEXT, string 
     
     return "{\"status\":\"success\",\"question_id\":\"" + created_id + "\"}";
 }
+string ADD_QUESTION_TO_TEST(string ID, string JWT, string TEST_ID, string QUESTION_ID) {
+    if (!TOKEN_APPROVED(ID, JWT)) {
+        return "{\"error\":\"ERROR 401\"}";
+    }
+    
+    // Подключаемся к БД
+    PGconn* conn = PQconnectdb("host=ep-snowy-truth-ah9dp5ai-pooler.c-3.us-east-1.aws.neon.tech "
+        "port=5432 "
+        "dbname=neondb "
+        "user=neondb_owner "
+        "password=npg_tTdv0G5elYum "
+        "sslmode=require");
+
+    if (PQstatus(conn) != CONNECTION_OK) {
+        PQfinish(conn);
+        return "{\"error\":\"DB fail\"}";
+    }
+    
+    // 1. Вычисляем порядковый номер вопроса (чтобы он встал в конец)
+    const char* count_params[1] = {TEST_ID.c_str()};
+    PGresult* count_res = PQexecParams(conn,
+        "SELECT COALESCE(MAX(question_order), 0) + 1 FROM test_questions WHERE test_id = $1",
+        1, NULL, count_params, NULL, NULL, 0);
+    
+    string next_order = "1";
+    if (PQresultStatus(count_res) == PGRES_TUPLES_OK) {
+        next_order = PQgetvalue(count_res, 0, 0);
+    }
+    PQclear(count_res);
+    
+    // 2. Связываем вопрос с тестом (Записываем в таблицу test_questions)
+    const char* params[3] = {TEST_ID.c_str(), QUESTION_ID.c_str(), next_order.c_str()};
+    PGresult* res = PQexecParams(conn,
+        "INSERT INTO test_questions (test_id, question_id, question_order) VALUES ($1, $2, $3) RETURNING question_id",
+        3, NULL, params, NULL, NULL, 0);
+        
+    if (PQresultStatus(res) != PGRES_TUPLES_OK) {
+        string err = PQresultErrorMessage(res);
+        PQclear(res);
+        PQfinish(conn);
+        return "{\"error\":\"Link failed: " + err + "\"}";
+    }
+    
+    PQclear(res);
+    PQfinish(conn);
+    return "{\"status\":\"success\"}";
+}
+
 string DELETE_QUESTION(string ID, string JWT, string QUESTION_ID) {
     if (!TOKEN_APPROVED(ID, JWT)) {
         return "ERROR 401";
@@ -1577,7 +1636,12 @@ string DELETE_QUESTION(string ID, string JWT, string QUESTION_ID) {
         return "ERROR 403";
     }
     
-    PGconn* conn = PQconnectdb("host=...");
+    PGconn* conn = PQconnectdb("host=ep-snowy-truth-ah9dp5ai-pooler.c-3.us-east-1.aws.neon.tech "
+        "port=5432 "
+        "dbname=neondb "
+        "user=neondb_owner "
+        "password=npg_tTdv0G5elYum "
+        "sslmode=require");
     if (PQstatus(conn) != CONNECTION_OK) return "{\"error\":\"DB fail\"}";
     
     // Проверяем автора
@@ -1639,7 +1703,12 @@ string REMOVE_QUESTION_FROM_TEST(string ID, string JWT, string TEST_ID, string Q
         return "ERROR 403";
     }
     
-    PGconn* conn = PQconnectdb("host=...");
+    PGconn* conn = PQconnectdb("host=ep-snowy-truth-ah9dp5ai-pooler.c-3.us-east-1.aws.neon.tech "
+        "port=5432 "
+        "dbname=neondb "
+        "user=neondb_owner "
+        "password=npg_tTdv0G5elYum "
+        "sslmode=require");
     if (PQstatus(conn) != CONNECTION_OK) return "{\"error\":\"DB fail\"}";
     
     // Проверяем, является ли преподавателем курса
@@ -1695,41 +1764,6 @@ string REMOVE_QUESTION_FROM_TEST(string ID, string JWT, string TEST_ID, string Q
     PQfinish(conn);
     return "{\"status\":\"success\"}";
 }
-
-string ADD_QUESTION_TO_TEST(string ID, string JWT, string TEST_ID, string QUESTION_ID) {
-    if (!TOKEN_APPROVED(ID, JWT)) return "ERROR 401";
-    if (!checkPermission(JWT, "test:quest:add:own")) return "ERROR 403";
-    
-    PGconn* conn = PQconnectdb("host=ep-snowy-truth-ah9dp5ai-pooler.c-3.us-east-1.aws.neon.tech port=5432 dbname=neondb user=neondb_owner password=npg_tTdv0G5elYum sslmode=require");
-    if (PQstatus(conn) != CONNECTION_OK) { PQfinish(conn); return "{\"error\":\"DB fail\"}"; }
-    
-    // Проверка прав (учитель курса)
-    const char* check_params[1] = {TEST_ID.c_str()};
-    PGresult* check_res = PQexecParams(conn,
-        "SELECT c.teacher_id FROM tests t JOIN courses c ON t.course_id = c.id WHERE t.id = $1 AND NOT t.is_deleted",
-        1, NULL, check_params, NULL, NULL, 0);
-    
-    if (PQresultStatus(check_res) != PGRES_TUPLES_OK || PQntuples(check_res) == 0) {
-        PQclear(check_res); PQfinish(conn); return "{\"error\":\"Test not found\"}";
-    }
-    string teacher_id = PQgetvalue(check_res, 0, 0);
-    PQclear(check_res);
-    
-    if (ID != teacher_id) { PQfinish(conn); return "{\"error\":\"No permission\"}"; }
-    
-    // Добавляем вопрос в конец списка
-    const char* params[2] = {TEST_ID.c_str(), QUESTION_ID.c_str()};
-    PGresult* res = PQexecParams(conn,
-        "INSERT INTO test_questions (test_id, question_id, question_order) VALUES ($1, $2, (SELECT COALESCE(MAX(question_order), 0) + 1 FROM test_questions WHERE test_id = $1))",
-        2, NULL, params, NULL, NULL, 0);
-        
-    if (PQresultStatus(res) != PGRES_COMMAND_OK) {
-        PQclear(res); PQfinish(conn); return "{\"error\":\"Add failed\"}";
-    }
-    
-    PQclear(res); PQfinish(conn);
-    return "{\"status\":\"success\"}";
-}
 string VIEW_TEST_ATTEMPTS(string ID, string JWT, string TEST_ID) {
     if (!TOKEN_APPROVED(ID, JWT)) {
         return "ERROR 401";
@@ -1739,7 +1773,12 @@ string VIEW_TEST_ATTEMPTS(string ID, string JWT, string TEST_ID) {
         return "ERROR 403";
     }
     
-    PGconn* conn = PQconnectdb("host=...");
+    PGconn* conn = PQconnectdb("host=ep-snowy-truth-ah9dp5ai-pooler.c-3.us-east-1.aws.neon.tech "
+        "port=5432 "
+        "dbname=neondb "
+        "user=neondb_owner "
+        "password=npg_tTdv0G5elYum "
+        "sslmode=require");
     if (PQstatus(conn) != CONNECTION_OK) return "{\"error\":\"DB fail\"}";
     
     // Проверяем, является ли преподавателем курса
@@ -1788,17 +1827,27 @@ string VIEW_TEST_ATTEMPTS(string ID, string JWT, string TEST_ID) {
 }
 string CREATE_ATTEMPT(string ID, string JWT, string TEST_ID) {
     if (!TOKEN_APPROVED(ID, JWT)) {
-        return "ERROR 401";
+        return "{\"error\":\"ERROR 401: Token invalid or expired\"}";
     }
     
     if (!checkPermission(JWT, "attempt:create:self")) {
-        return "ERROR 403";
+        return "{\"error\":\"ERROR 403: No permission\"}";
     }
     
-    PGconn* conn = PQconnectdb("host=...");
-    if (PQstatus(conn) != CONNECTION_OK) return "{\"error\":\"DB fail\"}";
+    PGconn* conn = PQconnectdb("host=ep-snowy-truth-ah9dp5ai-pooler.c-3.us-east-1.aws.neon.tech "
+        "port=5432 "
+        "dbname=neondb "
+        "user=neondb_owner "
+        "password=npg_tTdv0G5elYum "
+        "sslmode=require");
+        
+    if (PQstatus(conn) != CONNECTION_OK) {
+        string err = PQerrorMessage(conn);
+        PQfinish(conn);
+        return "{\"error\":\"DB fail: " + err + "\"}";
+    }
     
-    // Проверяем, активен ли тест
+    // 1. Проверяем, активен ли тест
     const char* test_params[1] = {TEST_ID.c_str()};
     PGresult* test_res = PQexecParams(conn,
         "SELECT is_active FROM tests WHERE id = $1 AND NOT is_deleted",
@@ -1807,7 +1856,7 @@ string CREATE_ATTEMPT(string ID, string JWT, string TEST_ID) {
     if (PQresultStatus(test_res) != PGRES_TUPLES_OK || PQntuples(test_res) == 0) {
         PQclear(test_res);
         PQfinish(conn);
-        return "{\"error\":\"Test not found\"}";
+        return "{\"error\":\"Test not found (Check Test ID)\"}";
     }
     
     bool is_active = (strcmp(PQgetvalue(test_res, 0, 0), "t") == 0);
@@ -1818,7 +1867,7 @@ string CREATE_ATTEMPT(string ID, string JWT, string TEST_ID) {
         return "{\"error\":\"Test is not active\"}";
     }
     
-    // Проверяем, есть ли уже попытка
+    // 2. Проверяем, есть ли уже попытка
     const char* check_params[2] = {ID.c_str(), TEST_ID.c_str()};
     PGresult* check_res = PQexecParams(conn,
         "SELECT id FROM attempts WHERE student_id = $1 AND test_id = $2",
@@ -1828,25 +1877,35 @@ string CREATE_ATTEMPT(string ID, string JWT, string TEST_ID) {
         string attempt_id = PQgetvalue(check_res, 0, 0);
         PQclear(check_res);
         PQfinish(conn);
-        return "{\"error\":\"Attempt already exists\",\"attempt_id\":" + attempt_id + "}";
+        // Возвращаем ID существующей попытки, чтобы фронт мог продолжить
+        return "{\"status\":\"success\",\"attempt_id\":" + attempt_id + "}";
     }
     PQclear(check_res);
     
-    // Создаем попытку
+    // 3. Создаем попытку (С ДЕТАЛЬНЫМ ВЫВОДОМ ОШИБКИ)
     PGresult* attempt_res = PQexecParams(conn,
         "INSERT INTO attempts (student_id, test_id, status) VALUES ($1, $2, 'in_progress') RETURNING id",
         2, NULL, check_params, NULL, NULL, 0);
     
     if (PQresultStatus(attempt_res) != PGRES_TUPLES_OK) {
+        string dbErr = PQresultErrorMessage(attempt_res);
+        
+        // Убираем переносы строк и кавычки, чтобы не сломать JSON
+        for(char &c : dbErr) {
+            if(c == '\n' || c == '\r') c = ' ';
+            if(c == '"') c = '\'';
+        }
+        
+        cout << "SQL ERROR in CREATE_ATTEMPT: " << dbErr << endl; // Пишем в консоль сервера
+        
         PQclear(attempt_res);
         PQfinish(conn);
-        return "{\"error\":\"Create attempt failed\"}";
+        return "{\"error\":\"Create attempt failed: " + dbErr + "\"}";
     }
     
     string attempt_id = PQgetvalue(attempt_res, 0, 0);
     PQclear(attempt_res);
     
-    // Создаем ответы для всех вопросов теста с последними версиями
     PGresult* questions_res = PQexecParams(conn,
         "SELECT tq.question_id, qv.version FROM test_questions tq "
         "JOIN question_versions qv ON tq.question_id = qv.question_id "
@@ -1860,10 +1919,13 @@ string CREATE_ATTEMPT(string ID, string JWT, string TEST_ID) {
             const char* ans_params[3] = {attempt_id.c_str(), 
                                        PQgetvalue(questions_res, i, 0),
                                        PQgetvalue(questions_res, i, 1)};
-            PQexecParams(conn,
+            // Игнорируем ошибки вставки ответов, главное попытка создана
+            PGresult* ins = PQexecParams(conn,
                 "INSERT INTO attempt_answers (attempt_id, question_id, question_version, selected_answer_index) "
                 "VALUES ($1, $2, $3, -1)",
-                3, NULL, ans_params, NULL, NULL, 0);
+                3, NULL, ans_params, NULL,
+NULL, 0);
+            PQclear(ins);
         }
     }
     PQclear(questions_res);
@@ -1873,17 +1935,25 @@ string CREATE_ATTEMPT(string ID, string JWT, string TEST_ID) {
 }
 string VIEW_ATTEMPT(string ID, string JWT, string TEST_ID) {
     if (!TOKEN_APPROVED(ID, JWT)) {
-        return "ERROR 401";
+        return "{\"error\":\"ERROR 401\"}";
     }
     
     if (!checkPermission(JWT, "attempt:read:self")) {
         return "ERROR 403";
     }
     
-    PGconn* conn = PQconnectdb("host=...");
-    if (PQstatus(conn) != CONNECTION_OK) return "{\"error\":\"DB fail\"}";
+    PGconn* conn = PQconnectdb("host=ep-snowy-truth-ah9dp5ai-pooler.c-3.us-east-1.aws.neon.tech "
+        "port=5432 "
+        "dbname=neondb "
+        "user=neondb_owner "
+        "password=npg_tTdv0G5elYum "
+        "sslmode=require");
+
+    if (PQstatus(conn) != CONNECTION_OK) {
+        PQfinish(conn);
+        return "{\"error\":\"DB fail\"}";
+    }
     
-    // Проверяем доступ
     const char* check_params[2] = {ID.c_str(), TEST_ID.c_str()};
     PGresult* check_res = PQexecParams(conn,
         "SELECT a.id, c.teacher_id FROM attempts a "
@@ -1899,18 +1969,10 @@ string VIEW_ATTEMPT(string ID, string JWT, string TEST_ID) {
     }
     
     string attempt_id = PQgetvalue(check_res, 0, 0);
-    string teacher_id = PQgetvalue(check_res, 1, 0);
+    string teacher_id = PQgetvalue(check_res, 0, 1);
+    
     PQclear(check_res);
     
-    bool is_teacher = (ID == teacher_id);
-    bool is_owner = true; // запрашивает свою попытку
-    
-    if (!is_teacher && !is_owner) {
-        PQfinish(conn);
-        return "{\"error\":\"No permission\"}";
-    }
-    
-    // Получаем ответы
     stringstream json;
     json << "{\"answers\":[";
     const char* attempt_params[1] = {attempt_id.c_str()};
@@ -1928,19 +1990,22 @@ string VIEW_ATTEMPT(string ID, string JWT, string TEST_ID) {
     }
     PQclear(answers_res);
     
-    // Получаем статус попытки
     PGresult* status_res = PQexecParams(conn,
         "SELECT status FROM attempts WHERE id = $1",
         1, NULL, attempt_params, NULL, NULL, 0);
     
     if (PQresultStatus(status_res) == PGRES_TUPLES_OK) {
         json << "],\"status\":\"" << PQgetvalue(status_res, 0, 0) << "\"}";
+    } else {
+        json << "],\"status\":\"unknown\"}";
     }
+    
     PQclear(status_res);
     PQfinish(conn);
     
     return json.str();
 }
+
 string UPDATE_ANSWER(string ID, string JWT, string ATTEMPT_ID, string QUESTION_ID, int ANSWER_INDEX) {
     if (!TOKEN_APPROVED(ID, JWT)) {
         return "ERROR 401";
@@ -1950,137 +2015,108 @@ string UPDATE_ANSWER(string ID, string JWT, string ATTEMPT_ID, string QUESTION_I
         return "ERROR 403";
     }
     
-    PGconn* conn = PQconnectdb("host=...");
-    if (PQstatus(conn) != CONNECTION_OK) return "{\"error\":\"DB fail\"}";
+    PGconn* conn = PQconnectdb("host=ep-snowy-truth-ah9dp5ai-pooler.c-3.us-east-1.aws.neon.tech port=5432 dbname=neondb user=neondb_owner password=npg_tTdv0G5elYum sslmode=require");
+    if (PQstatus(conn) != CONNECTION_OK) { PQfinish(conn); return "{\"error\":\"DB fail\"}"; }
     
-    const char* check_params[1] = {ATTEMPT_ID.c_str()};
-    PGresult* check_res = PQexecParams(conn,
-        "SELECT student_id, test_id, status FROM attempts WHERE id = $1",
-        1, NULL, check_params, NULL, NULL, 0);
+    // Мы ищем запись по ID попытки и ID вопроса.
+    const char* params[3] = {to_string(ANSWER_INDEX).c_str(), ATTEMPT_ID.c_str(), QUESTION_ID.c_str()};
     
-    if (PQresultStatus(check_res) != PGRES_TUPLES_OK || PQntuples(check_res) == 0) {
-        PQclear(check_res);
+    PGresult* res = PQexecParams(conn,
+        "UPDATE attempt_answers SET selected_answer_index = $1, answered_at = NOW() "
+        "WHERE attempt_id = $2 AND question_id = $3 "
+        "RETURNING id",
+        3, NULL, params, NULL, NULL, 0);
+        
+    if (PQresultStatus(res) != PGRES_TUPLES_OK) {
+        string err = PQresultErrorMessage(res);
+        cout << "SQL ERROR in UPDATE_ANSWER: " << err << endl; // ЛОГ ОШИБКИ
+        PQclear(res);
         PQfinish(conn);
-        return "{\"error\":\"Attempt not found\"}";
+        return "{\"error\":\"Update failed: " + err + "\"}";
     }
     
-    string student_id = PQgetvalue(check_res, 0, 0);
-    string test_id = PQgetvalue(check_res, 1, 0);
-    string status = PQgetvalue(check_res, 2, 0);
-    PQclear(check_res);
-    
-    if (ID != student_id) {
+    // Проверяем, обновилось ли хоть что-то
+    if (PQntuples(res) == 0) {
+        cout << "WARNING: Answer not updated! (Maybe wrong question_id?)" << endl;
+        PQclear(res);
         PQfinish(conn);
-        return "{\"error\":\"Not your attempt\"}";
+        // Не возвращаем ошибку, чтобы фронт не падал, но пишем в лог
+        return "{\"status\":\"warning_no_row_updated\"}";
     }
     
-    if (status != "in_progress") {
-        PQfinish(conn);
-        return "{\"error\":\"Attempt is not in progress\"}";
-    }
-    
-    // Проверяем, активен ли тест
-    const char* test_params[1] = {test_id.c_str()}; // FIX: создаем отдельный массив
-    PGresult* test_res = PQexecParams(conn,
-        "SELECT is_active FROM tests WHERE id = $1",
-        1, NULL, test_params, NULL, NULL, 0);
-    
-    if (PQresultStatus(test_res) == PGRES_TUPLES_OK && PQntuples(test_res) > 0) {
-        bool is_active = (strcmp(PQgetvalue(test_res, 0, 0), "t") == 0);
-        if (!is_active) {
-            PQclear(test_res);
-            PQfinish(conn);
-            return "{\"error\":\"Test is not active\"}";
-        }
-    }
-    PQclear(test_res);
-    
-    // Обновляем ответ
-    const char* answer_index_str = to_string(ANSWER_INDEX).c_str();
-    const char* update_params[3] = {ATTEMPT_ID.c_str(), QUESTION_ID.c_str(), answer_index_str};
-    PGresult* update_res = PQexecParams(conn,
-        "UPDATE attempt_answers SET selected_answer_index = $3, answered_at = NOW() "
-        "WHERE attempt_id = $1 AND question_id = $2 RETURNING question_id",
-        3, NULL, update_params, NULL, NULL, 0);
-    
-    if (PQresultStatus(update_res) != PGRES_TUPLES_OK) {
-        PQclear(update_res);
-        PQfinish(conn);
-        return "{\"error\":\"Update failed\"}";
-    }
-    
-    PQclear(update_res);
+    PQclear(res);
     PQfinish(conn);
     return "{\"status\":\"success\"}";
 }
+
 string COMPLETE_ATTEMPT(string ID, string JWT, string ATTEMPT_ID) {
-    if (!TOKEN_APPROVED(ID, JWT)) {
+    if (!TOKEN_APPROVED(ID, JWT)){ 
         return "ERROR 401";
     }
-    
     if (!checkPermission(JWT, "attempt:complete:self")) {
         return "ERROR 403";
     }
     
-    PGconn* conn = PQconnectdb("host=...");
-    if (PQstatus(conn) != CONNECTION_OK) return "{\"error\":\"DB fail\"}";
+    PGconn* conn = PQconnectdb("host=ep-snowy-truth-ah9dp5ai-pooler.c-3.us-east-1.aws.neon.tech port=5432 dbname=neondb user=neondb_owner password=npg_tTdv0G5elYum sslmode=require");
+    if (PQstatus(conn) != CONNECTION_OK) { PQfinish(conn); return "{\"error\":\"DB fail\"}"; }
     
-    const char* check_params[1] = {ATTEMPT_ID.c_str()};
-    PGresult* check_res = PQexecParams(conn,
-        "SELECT student_id, test_id, status FROM attempts WHERE id = $1",
-        1, NULL, check_params, NULL, NULL, 0);
+    // 1. Считаем баллы
+    const char* p[1] = {ATTEMPT_ID.c_str()};
     
-    if (PQresultStatus(check_res) != PGRES_TUPLES_OK || PQntuples(check_res) == 0) {
-        PQclear(check_res);
+    PGresult* calc_res = PQexecParams(conn,
+        "SELECT COUNT(*), "
+        "SUM(CASE WHEN aa.selected_answer_index = qv.correct_answer_index THEN 1 ELSE 0 END) "
+        "FROM attempt_answers aa "
+        "JOIN question_versions qv ON aa.question_id = qv.question_id AND aa.question_version = qv.version "
+        "WHERE aa.attempt_id = $1",
+        1, NULL, p, NULL, NULL, 0);
+        
+    int total = 0;
+    int correct = 0;
+    
+    if (PQresultStatus(calc_res) == PGRES_TUPLES_OK) {
+        if (PQgetvalue(calc_res, 0, 0)) total = atoi(PQgetvalue(calc_res, 0, 0));
+        if (PQgetvalue(calc_res, 0, 1)) correct = atoi(PQgetvalue(calc_res, 0, 1));
+    } else {
+        cout << "SQL CALC ERROR: " << PQresultErrorMessage(calc_res) << endl;
+    }
+    PQclear(calc_res);
+    
+    // ЗАЩИТА ОТ ДЕЛЕНИЯ НА НОЛЬ
+    int percent = (total > 0) ? (correct * 100 / total) : 0;
+    
+    cout << "Grading attempt " << ATTEMPT_ID << ": " << correct << "/" << total << " (" << percent << "%)" << endl;
+    
+    // 2. Записываем результат
+    const char* up_params[4] = {
+        to_string(correct).c_str(),
+        to_string(total).c_str(),
+        to_string(percent).c_str(),
+        ATTEMPT_ID.c_str()
+    };
+    
+    PGresult* res = PQexecParams(conn,
+        "UPDATE attempts SET status = 'completed', completed_at = NOW(), "
+        "score = $1, max_score = $2, percentage = $3 "
+        "WHERE id = $4 RETURNING id",
+        4, NULL, up_params, NULL, NULL, 0);
+        
+    if (PQresultStatus(res) != PGRES_TUPLES_OK) {
+        string err = PQresultErrorMessage(res);
+        cout << "SQL UPDATE ERROR: " << err << endl;
+        PQclear(res);
         PQfinish(conn);
-        return "{\"error\":\"Attempt not found\"}";
+        return "{\"error\":\"Save grade failed: " + err + "\"}";
     }
     
-    string student_id = PQgetvalue(check_res, 0, 0);
-    string test_id = PQgetvalue(check_res, 1, 0);
-    string status = PQgetvalue(check_res, 2, 0);
-    PQclear(check_res);
-    
-    if (ID != student_id) {
-        PQfinish(conn);
-        return "{\"error\":\"Not your attempt\"}";
-    }
-    
-    if (status != "in_progress") {
-        PQfinish(conn);
-        return "{\"error\":\"Attempt is not in progress\"}";
-    }
-    
-    // Проверяем, активен ли тест
-    const char* test_params[1] = {test_id.c_str()};
-    PGresult* test_res = PQexecParams(conn,
-        "SELECT is_active FROM tests WHERE id = $1",
-        1, NULL, test_params, NULL, NULL, 0);
-    
-    if (PQresultStatus(test_res) == PGRES_TUPLES_OK && PQntuples(test_res) > 0) {
-        bool is_active = (strcmp(PQgetvalue(test_res, 0, 0), "t") == 0);
-        if (!is_active) {
-            PQclear(test_res);
-            PQfinish(conn);
-            return "{\"error\":\"Test is not active\"}";
-        }
-    }
-    PQclear(test_res);
-    
-    PGresult* complete_res = PQexecParams(conn,
-        "UPDATE attempts SET status = 'completed', completed_at = NOW() WHERE id = $1 RETURNING id",
-        1, NULL, check_params, NULL, NULL, 0);
-    
-    if (PQresultStatus(complete_res) != PGRES_TUPLES_OK) {
-        PQclear(complete_res);
-        PQfinish(conn);
-        return "{\"error\":\"Complete failed\"}";
-    }
-    
-    PQclear(complete_res);
+    PQclear(res);
     PQfinish(conn);
-    return "{\"status\":\"success\"}";
+    
+    // Возвращаем JSON с результатом
+    return "{\"status\":\"success\", \"score\":" + to_string(correct) + ", \"max_score\":" + to_string(total) + "}";
 }
+
+
 int main(){
     httplib::Server svr;
     svr.Get("/task", [](const httplib::Request& req, httplib::Response& res) {
@@ -2135,6 +2171,14 @@ int main(){
             result = "ERROR 418: User is blocked";
         } else {
             result = VIEW_OTHER_ROLES(ID, TARGET_ID, JWT);
+        }
+    }
+    else if (ACTION == "ADD_QUESTION_TO_TEST"){
+        string blocked = VIEW_BLOCKED(ID, ID, JWT);
+        if (blocked.find("true") != string::npos) {
+            result = "ERROR 418: User is blocked";
+        } else {
+            result = ADD_QUESTION_TO_TEST(ID, JWT, TEST_ID, QUESTION_ID);
         }
     }
     else if (ACTION == "EDIT_OWN_NAME"){
