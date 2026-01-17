@@ -360,7 +360,7 @@ func (am *AuthModule) handleVerifyCode(w http.ResponseWriter, r *http.Request) {
 	collection.UpdateOne(context.TODO(), filter, update)
 
 	userCollection := am.mongoClient.Database("App").Collection("Users")
-	userFilter := bson.M{"ID": authCode.UserID}
+	userFilter := bson.M{"id": authCode.UserID}
 	var user User
 	err = userCollection.FindOne(context.TODO(), userFilter).Decode(&user)
 
@@ -396,7 +396,7 @@ func (am *AuthModule) checkUserBlock(w http.ResponseWriter, r *http.Request) {
 
 	collection := am.mongoClient.Database("App").Collection("Users")
 
-	filter := bson.M{"ID": targetID}
+	filter := bson.M{"id": targetID}
 
 	var user User
 	err := collection.FindOne(context.TODO(), filter).Decode(&user)
@@ -436,7 +436,7 @@ func (am *AuthModule) toggleUserBlock(w http.ResponseWriter, r *http.Request) {
 
 	collection := am.mongoClient.Database("App").Collection("Users")
 
-	filter := bson.M{"ID": targetID}
+	filter := bson.M{"id": targetID}
 
 	isBlocked := action == "block"
 
@@ -494,7 +494,7 @@ func (am *AuthModule) editotherrole(w http.ResponseWriter, r *http.Request) {
 
 	collection := am.mongoClient.Database("App").Collection("Users")
 
-	filter := bson.M{"ID": targetID}
+	filter := bson.M{"id": targetID}
 
 	updateData := bson.M{
 		"role":        targetRole,
@@ -554,7 +554,7 @@ func (am *AuthModule) viewothername(w http.ResponseWriter, r *http.Request) {
 	am.ConnectMongoDB()
 	collection := am.mongoClient.Database("App").Collection("Users")
 
-	filter := bson.M{"ID": targetID}
+	filter := bson.M{"id": targetID}
 	var user User
 	err := collection.FindOne(context.TODO(), filter).Decode(&user)
 
@@ -576,6 +576,88 @@ func (am *AuthModule) viewothername(w http.ResponseWriter, r *http.Request) {
 	w.Write([]byte(fullName))
 }
 
+func (am *AuthModule) checkRoleInDB(requiredRoles []string) func(http.HandlerFunc) http.HandlerFunc {
+	return func(next http.HandlerFunc) http.HandlerFunc {
+		return func(w http.ResponseWriter, r *http.Request) {
+			authHeader := r.Header.Get("Authorization")
+			if authHeader == "" {
+				http.Error(w, "Unauthorized", http.StatusUnauthorized)
+				return
+			}
+
+			tokenString := strings.TrimPrefix(authHeader, "Bearer ")
+			token, err := jwt.Parse(tokenString, func(token *jwt.Token) (interface{}, error) {
+				return []byte(JWT_SECRET), nil
+			})
+
+			if err != nil || !token.Valid {
+				http.Error(w, "Invalid token", http.StatusUnauthorized)
+				return
+			}
+
+			claims, ok := token.Claims.(jwt.MapClaims)
+			if !ok {
+				http.Error(w, "Invalid token claims", http.StatusUnauthorized)
+				return
+			}
+
+			userID, ok := claims["user_id"].(string)
+			if !ok || userID == "" {
+				http.Error(w, "Invalid user ID in token", http.StatusUnauthorized)
+				return
+			}
+
+			// Проверяем в БД: актуальная роль и блокировка
+			am.ConnectMongoDB()
+			collection := am.mongoClient.Database("App").Collection("Users")
+
+			filter := bson.M{"id": userID}
+			var user User
+
+			dbErr := collection.FindOne(context.TODO(), filter).Decode(&user)
+
+			if dbErr != nil {
+				if dbErr == mongo.ErrNoDocuments {
+					http.Error(w, "User not found", http.StatusNotFound)
+				} else {
+					http.Error(w, "Database error", http.StatusInternalServerError)
+				}
+				return
+			}
+
+			// Проверяем блокировку
+			if user.IsBlocked {
+				http.Error(w, "User is blocked", http.StatusForbidden)
+				return
+			}
+
+			// Проверяем роль пользователя
+			roleAllowed := false
+			for _, requiredRole := range requiredRoles {
+				if user.Role == requiredRole {
+					roleAllowed = true
+					break
+				}
+			}
+
+			if !roleAllowed {
+				if len(requiredRoles) == 1 {
+					http.Error(w, fmt.Sprintf("%s access required", requiredRoles[0]), http.StatusForbidden)
+				} else {
+					http.Error(w, fmt.Sprintf("Access denied. Required roles: %v", requiredRoles), http.StatusForbidden)
+				}
+				return
+			}
+
+			// Добавляем информацию о пользователе в контекст запроса
+			ctx := context.WithValue(r.Context(), "user", user)
+			r = r.WithContext(ctx)
+
+			next(w, r)
+		}
+	}
+}
+
 func (am *AuthModule) viewotherrole(w http.ResponseWriter, r *http.Request) {
 	ID := r.URL.Query().Get("ID")
 	if ID == "" {
@@ -593,7 +675,7 @@ func (am *AuthModule) viewotherrole(w http.ResponseWriter, r *http.Request) {
 
 	collection := am.mongoClient.Database("App").Collection("Users")
 
-	filter := bson.M{"ID": ID}
+	filter := bson.M{"id": ID}
 
 	var user User
 	err := collection.FindOne(context.TODO(), filter).Decode(&user)
@@ -641,7 +723,7 @@ func (am *AuthModule) changeusername(w http.ResponseWriter, r *http.Request) {
 
 	collection := am.mongoClient.Database("App").Collection("Users")
 
-	filter := bson.M{"ID": ID}
+	filter := bson.M{"id": ID}
 
 	updateData := bson.M{}
 	if new_name != "" {
@@ -706,7 +788,7 @@ func (am *AuthModule) changeotherusername(w http.ResponseWriter, r *http.Request
 
 	collection := am.mongoClient.Database("App").Collection("Users")
 
-	filter := bson.M{"ID": ID}
+	filter := bson.M{"id": ID}
 
 	updateData := bson.M{}
 	if new_name != "" {
@@ -876,7 +958,7 @@ func (am *AuthModule) handleRefreshToken(w http.ResponseWriter, r *http.Request)
 
 	var user User
 	err = collection.FindOne(context.TODO(), bson.M{
-		"ID":             userID,
+		"id":             userID,
 		"refresh_tokens": req.RefreshToken,
 	}).Decode(&user)
 
@@ -927,10 +1009,10 @@ func (am *AuthModule) handleLogout(w http.ResponseWriter, r *http.Request) {
 
 	if allDevices {
 		update := bson.M{"$set": bson.M{"refresh_tokens": []string{}}}
-		collection.UpdateOne(context.TODO(), bson.M{"ID": userID}, update)
+		collection.UpdateOne(context.TODO(), bson.M{"id": userID}, update)
 	} else {
 		update := bson.M{"$pull": bson.M{"refresh_tokens": req.RefreshToken}}
-		collection.UpdateOne(context.TODO(), bson.M{"ID": userID}, update)
+		collection.UpdateOne(context.TODO(), bson.M{"id": userID}, update)
 	}
 
 	response := map[string]string{
@@ -1011,7 +1093,7 @@ func (am *AuthModule) handleGitHubOauth(w http.ResponseWriter, r *http.Request) 
 
 		collection := am.mongoClient.Database("App").Collection("Users")
 		update := bson.M{"$addToSet": bson.M{"refresh_tokens": refreshTokenJWT}}
-		collection.UpdateOne(context.TODO(), bson.M{"ID": userID}, update)
+		collection.UpdateOne(context.TODO(), bson.M{"id": userID}, update)
 
 		am.authState.tokensMutex.Lock()
 		am.authState.loginTokens[state] = LoginToken{
@@ -1105,7 +1187,7 @@ func (am *AuthModule) handleYandexOauth(w http.ResponseWriter, r *http.Request) 
 
 		collection := am.mongoClient.Database("App").Collection("Users")
 		update := bson.M{"$addToSet": bson.M{"refresh_tokens": refreshTokenJWT}}
-		collection.UpdateOne(context.TODO(), bson.M{"ID": userID}, update)
+		collection.UpdateOne(context.TODO(), bson.M{"id": userID}, update)
 
 		am.authState.tokensMutex.Lock()
 		am.authState.loginTokens[state] = LoginToken{
@@ -1135,17 +1217,17 @@ func (am *AuthModule) saveUserWithTokens(user User) error {
 	opts := options.Update().SetUpsert(true)
 	_, err := collection.UpdateOne(
 		context.TODO(),
-		bson.M{"ID": user.ID},
+		bson.M{"id": user.ID},
 		bson.M{
 			"$setOnInsert": bson.M{
-				"ID":             user.ID,
+				"id":             user.ID,
 				"Login":          user.Login,
 				"Email":          user.Email,
 				"FirstName":      user.FirstName,
 				"LastName":       user.LastName,
 				"Type":           user.Type,
-				"Role":           user.Role,
-				"Permissions":    user.Permissions,
+				"role":           user.Role,
+				"permissions":    user.Permissions,
 				"refresh_tokens": []string{},
 				"CreatedAt":      time.Now(),
 			},
