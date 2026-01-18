@@ -172,8 +172,8 @@ async def users_get(c: CallbackQuery, state: FSMContext, api: BotLogicAPI):
     if not await _is_authorized(c.message, api):
         await _deny_not_auth(c.message)
         return
-    await _set_action(state, "users:get", "Введи ID пользователя:")
-    await c.message.answer("Введи ID пользователя:")
+    await _set_action(state, "users:get", "Введи ID пользователя (число).")
+    await c.message.answer("Введи ID пользователя (число).")
 
 
 @router.callback_query(F.data == "users:set_name")
@@ -182,8 +182,8 @@ async def users_set_name(c: CallbackQuery, state: FSMContext, api: BotLogicAPI):
     if not await _is_authorized(c.message, api):
         await _deny_not_auth(c.message)
         return
-    await _set_action(state, "users:set_name", "Введи: <id> <ФИО>")
-    await c.message.answer("Введи: <id> <ФИО>")
+    await _set_action(state, "users:set_name", "Отправь ID пользователя и ФИО через пробел\nПример: 12 Иванов Иван Иванович")
+    await c.message.answer("Отправь ID пользователя и ФИО через пробел\nПример: 12 Иванов Иван Иванович")
 
 
 @router.callback_query(F.data == "users:data")
@@ -192,8 +192,8 @@ async def users_data(c: CallbackQuery, state: FSMContext, api: BotLogicAPI):
     if not await _is_authorized(c.message, api):
         await _deny_not_auth(c.message)
         return
-    await _set_action(state, "users:data", "Введи ID пользователя:")
-    await c.message.answer("Введи ID пользователя:")
+    await _set_action(state, "users:data", "Введи ID пользователя (число).")
+    await c.message.answer("Введи ID пользователя (число).")
 
 
 @router.callback_query(F.data == "users:roles_get")
@@ -202,8 +202,8 @@ async def users_roles_get(c: CallbackQuery, state: FSMContext, api: BotLogicAPI)
     if not await _is_authorized(c.message, api):
         await _deny_not_auth(c.message)
         return
-    await _set_action(state, "users:roles_get", "Введи ID пользователя:")
-    await c.message.answer("Введи ID пользователя:")
+    await _set_action(state, "users:roles_get", "Введи ID пользователя (число).")
+    await c.message.answer("Введи ID пользователя (число).")
 
 
 @router.callback_query(F.data == "users:roles_set")
@@ -212,8 +212,8 @@ async def users_roles_set(c: CallbackQuery, state: FSMContext, api: BotLogicAPI)
     if not await _is_authorized(c.message, api):
         await _deny_not_auth(c.message)
         return
-    await _set_action(state, "users:roles_set", "Введи: <id> <role1,role2,...>")
-    await c.message.answer("Введи: <id> <role1,role2,...>")
+    await _set_action(state, "users:roles_set", "Отправь ID пользователя и роли через запятую\nПример: 12 student,teacher")
+    await c.message.answer("Отправь ID пользователя и роли через запятую\nПример: 12 student,teacher")
 
 
 @router.callback_query(F.data == "users:block_get")
@@ -222,8 +222,8 @@ async def users_block_get(c: CallbackQuery, state: FSMContext, api: BotLogicAPI)
     if not await _is_authorized(c.message, api):
         await _deny_not_auth(c.message)
         return
-    await _set_action(state, "users:block_get", "Введи ID пользователя:")
-    await c.message.answer("Введи ID пользователя:")
+    await _set_action(state, "users:block_get", "Введи ID пользователя (число).")
+    await c.message.answer("Введи ID пользователя (число).")
 
 
 @router.callback_query(F.data == "users:block_set")
@@ -232,8 +232,8 @@ async def users_block_set(c: CallbackQuery, state: FSMContext, api: BotLogicAPI)
     if not await _is_authorized(c.message, api):
         await _deny_not_auth(c.message)
         return
-    await _set_action(state, "users:block_set", "Введи: <id> on/off")
-    await c.message.answer("Введи: <id> on/off")
+    await _set_action(state, "users:block_set", "Отправь: ID пользователя и on/off (on — разблокировать, off — заблокировать).\nПример: 12 off")
+    await c.message.answer("Отправь: ID пользователя и on/off (on — разблокировать, off — заблокировать).\nПример: 12 off")
 
 
 # ========= COURSES callbacks =========
@@ -253,8 +253,8 @@ async def courses_get(c: CallbackQuery, state: FSMContext, api: BotLogicAPI):
     if not await _is_authorized(c.message, api):
         await _deny_not_auth(c.message)
         return
-    await _set_action(state, "courses:get", "Введи ID дисциплины:")
-    await c.message.answer("Введи ID дисциплины:")
+    await _set_action(state, "courses:get", "Введи ID дисциплины.")
+    await c.message.answer("Введи ID дисциплины.")
 
 
 @router.callback_query(F.data == "courses:set")
@@ -263,8 +263,8 @@ async def courses_set(c: CallbackQuery, state: FSMContext, api: BotLogicAPI):
     if not await _is_authorized(c.message, api):
         await _deny_not_auth(c.message)
         return
-    await _set_action(state, "courses:set", "Введи: <id> name=<...> desc=<...>")
-    await c.message.answer("Введи: <id> name=<...> desc=<...>")
+    await _set_action(state, "courses:set", "Чтобы изменить дисциплину, отправь одной строкой:\nID name=<название> desc=<описание>\nПример: 3 name=Матан desc=Интегралы")
+    await c.message.answer("Чтобы изменить дисциплину, отправь одной строкой:\nID name=<название> desc=<описание>\nПример: 3 name=Матан desc=Интегралы")
 
 
 @router.callback_query(F.data == "courses:tests")
@@ -273,8 +273,8 @@ async def courses_tests(c: CallbackQuery, state: FSMContext, api: BotLogicAPI):
     if not await _is_authorized(c.message, api):
         await _deny_not_auth(c.message)
         return
-    await _set_action(state, "courses:tests", "Введи ID дисциплины:")
-    await c.message.answer("Введи ID дисциплины:")
+    await _set_action(state, "courses:tests", "Введи ID дисциплины (число).")
+    await c.message.answer("Введи ID дисциплины (число).")
 
 
 @router.callback_query(F.data == "courses:users")
@@ -283,8 +283,8 @@ async def courses_users(c: CallbackQuery, state: FSMContext, api: BotLogicAPI):
     if not await _is_authorized(c.message, api):
         await _deny_not_auth(c.message)
         return
-    await _set_action(state, "courses:users", "Введи ID дисциплины:")
-    await c.message.answer("Введи ID дисциплины:")
+    await _set_action(state, "courses:users", "Введи ID дисциплины (число).")
+    await c.message.answer("Введи ID дисциплины (число).")
 
 
 @router.callback_query(F.data == "courses:user_add")
@@ -293,8 +293,8 @@ async def courses_user_add(c: CallbackQuery, state: FSMContext, api: BotLogicAPI
     if not await _is_authorized(c.message, api):
         await _deny_not_auth(c.message)
         return
-    await _set_action(state, "courses:user_add", "Введи: <course_id> <user_id>")
-    await c.message.answer("Введи: <course_id> <user_id>")
+    await _set_action(state, "courses:user_add", "Отправь ID дисциплины и ID пользователя через пробел.\nПример: 3 12")
+    await c.message.answer("Отправь ID дисциплины и ID пользователя через пробел.\nПример: 3 12")
 
 
 @router.callback_query(F.data == "courses:user_del")
@@ -303,8 +303,8 @@ async def courses_user_del(c: CallbackQuery, state: FSMContext, api: BotLogicAPI
     if not await _is_authorized(c.message, api):
         await _deny_not_auth(c.message)
         return
-    await _set_action(state, "courses:user_del", "Введи: <course_id> <user_id>")
-    await c.message.answer("Введи: <course_id> <user_id>")
+    await _set_action(state, "courses:user_del", "Отправь ID дисциплины и ID пользователя через пробел.\nПример: 3 12")
+    await c.message.answer("Отправь ID дисциплины и ID пользователя через пробел.\nПример: 3 12")
 
 
 @router.callback_query(F.data == "courses:add")
@@ -313,8 +313,8 @@ async def courses_add(c: CallbackQuery, state: FSMContext, api: BotLogicAPI):
     if not await _is_authorized(c.message, api):
         await _deny_not_auth(c.message)
         return
-    await _set_action(state, "courses:add", "Введи: <name> | <desc> | <teacher_id>")
-    await c.message.answer("Введи: <name> | <desc> | <teacher_id>")
+    await _set_action(state, "courses:add", "Создание дисциплины: отправь одной строкой Название | Описание | ID преподавателя\nПример: Математика | Базовый курс | 5")
+    await c.message.answer("Создание дисциплины: отправь одной строкой Название | Описание | ID преподавателя\nПример: Математика | Базовый курс | 5")
 
 
 @router.callback_query(F.data == "courses:del")
@@ -323,8 +323,8 @@ async def courses_del(c: CallbackQuery, state: FSMContext, api: BotLogicAPI):
     if not await _is_authorized(c.message, api):
         await _deny_not_auth(c.message)
         return
-    await _set_action(state, "courses:del", "Введи ID дисциплины:")
-    await c.message.answer("Введи ID дисциплины:")
+    await _set_action(state, "courses:del", "Введи ID дисциплины (число).")
+    await c.message.answer("Введи ID дисциплины (число).")
 
 
 @router.callback_query(F.data == "courses:test_status")
@@ -333,8 +333,8 @@ async def courses_test_status(c: CallbackQuery, state: FSMContext, api: BotLogic
     if not await _is_authorized(c.message, api):
         await _deny_not_auth(c.message)
         return
-    await _set_action(state, "courses:test_status", "Введи: <course_id> <test_id>")
-    await c.message.answer("Введи: <course_id> <test_id>")
+    await _set_action(state, "courses:test_status", "Отправь ID дисциплины и ID теста через пробел.\nПример: 3 7")
+    await c.message.answer("Отправь ID дисциплины и ID теста через пробел.\nПример: 3 7")
 
 
 # ========= QUESTIONS callbacks =========
@@ -354,8 +354,8 @@ async def q_get(c: CallbackQuery, state: FSMContext, api: BotLogicAPI):
     if not await _is_authorized(c.message, api):
         await _deny_not_auth(c.message)
         return
-    await _set_action(state, "q:get", "Введи: <question_id> [version]")
-    await c.message.answer("Введи: <question_id> [version]")
+    await _set_action(state, "q:get", "Отправь ID вопроса и (необязательно) версию.\nПример: 10 2")
+    await c.message.answer("Отправь ID вопроса и (необязательно) версию.\nПример: 10 2")
 
 
 @router.callback_query(F.data == "q:add")
@@ -364,8 +364,8 @@ async def q_add(c: CallbackQuery, state: FSMContext, api: BotLogicAPI):
     if not await _is_authorized(c.message, api):
         await _deny_not_auth(c.message)
         return
-    await _set_action(state, "q:add", "Введи: <title> | <text> | <opt1;opt2;...> | <correct_index>")
-    await c.message.answer("Введи: <title> | <text> | <opt1;opt2;...> | <correct_index>")
+    await _set_action(state, "q:add", "Создание вопроса: отправь одной строкой Заголовок | Текст | Варианты через ; | Номер правильного варианта (варианты считаются с нуля)\nПример: Столица РФ? | Выбери вариант | Москва;СПб;Казань | 0")
+    await c.message.answer("Создание вопроса: отправь одной строкой Заголовок | Текст | Варианты через ; | Номер правильного варианта (варианты считаются с нуля)\nПример: Столица РФ? | Выбери вариант | Москва;СПб;Казань | 0")
 
 
 @router.callback_query(F.data == "q:update")
@@ -374,8 +374,8 @@ async def q_update(c: CallbackQuery, state: FSMContext, api: BotLogicAPI):
     if not await _is_authorized(c.message, api):
         await _deny_not_auth(c.message)
         return
-    await _set_action(state, "q:update", "Введи: <id> | <title> | <text> | <opt1;opt2;...> | <correct_index>")
-    await c.message.answer("Введи: <id> | <title> | <text> | <opt1;opt2;...> | <correct_index>")
+    await _set_action(state, "q:update", "Изменение вопроса: отправь одной строкой ID | Заголовок | Текст | Варианты через ; | Номер правильного варианта (варианты считаются с нуля)\nПример: 12 | Столица РФ? | Выбери вариант | Москва;СПб;Казань | 0")
+    await c.message.answer("Изменение вопроса: отправь одной строкой ID | Заголовок | Текст | Варианты через ; | Номер правильного варианта (варианты считаются с нуля)\nПример: 12 | Столица РФ? | Выбери вариант | Москва;СПб;Казань | 0")
 
 
 @router.callback_query(F.data == "q:del")
@@ -384,8 +384,8 @@ async def q_del(c: CallbackQuery, state: FSMContext, api: BotLogicAPI):
     if not await _is_authorized(c.message, api):
         await _deny_not_auth(c.message)
         return
-    await _set_action(state, "q:del", "Введи ID вопроса:")
-    await c.message.answer("Введи ID вопроса:")
+    await _set_action(state, "q:del", "Введи ID вопроса (число).")
+    await c.message.answer("Введи ID вопроса (число).")
 
 
 # ========= TESTS callbacks =========
@@ -396,8 +396,8 @@ async def t_get(c: CallbackQuery, state: FSMContext, api: BotLogicAPI):
     if not await _is_authorized(c.message, api):
         await _deny_not_auth(c.message)
         return
-    await _set_action(state, "t:get", "Введи ID теста:")
-    await c.message.answer("Введи ID теста:")
+    await _set_action(state, "t:get", "Введи ID теста (число).")
+    await c.message.answer("Введи ID теста (число).")
 
 
 @router.callback_query(F.data == "t:add")
@@ -406,8 +406,8 @@ async def t_add(c: CallbackQuery, state: FSMContext, api: BotLogicAPI):
     if not await _is_authorized(c.message, api):
         await _deny_not_auth(c.message)
         return
-    await _set_action(state, "t:add", "Введи: <course_id> <name>")
-    await c.message.answer("Введи: <course_id> <name>")
+    await _set_action(state, "t:add", "Отправь ID дисциплины и название теста.\nПример: 3 Контрольная 1")
+    await c.message.answer("Отправь ID дисциплины и название теста.\nПример: 3 Контрольная 1")
 
 
 @router.callback_query(F.data == "t:del")
@@ -416,8 +416,8 @@ async def t_del(c: CallbackQuery, state: FSMContext, api: BotLogicAPI):
     if not await _is_authorized(c.message, api):
         await _deny_not_auth(c.message)
         return
-    await _set_action(state, "t:del", "Введи ID теста:")
-    await c.message.answer("Введи ID теста:")
+    await _set_action(state, "t:del", "Введи ID теста (число).")
+    await c.message.answer("Введи ID теста (число).")
 
 
 @router.callback_query(F.data == "t:active")
@@ -426,8 +426,8 @@ async def t_active(c: CallbackQuery, state: FSMContext, api: BotLogicAPI):
     if not await _is_authorized(c.message, api):
         await _deny_not_auth(c.message)
         return
-    await _set_action(state, "t:active", "Введи: <test_id> on/off")
-    await c.message.answer("Введи: <test_id> on/off")
+    await _set_action(state, "t:active", "Отправь ID дисциплины, ID теста и on/off (on - включить, off - выключить).\nПример: 3 7 on")
+    await c.message.answer("Отправь ID дисциплины, ID теста и on/off (on - включить, off - выключить).\nПример: 3 7 on")
 
 
 @router.callback_query(F.data == "t:q_add")
@@ -436,8 +436,8 @@ async def t_q_add(c: CallbackQuery, state: FSMContext, api: BotLogicAPI):
     if not await _is_authorized(c.message, api):
         await _deny_not_auth(c.message)
         return
-    await _set_action(state, "t:q_add", "Введи: <test_id> <question_id>")
-    await c.message.answer("Введи: <test_id> <question_id>")
+    await _set_action(state, "t:q_add", "Отправь ID теста и ID вопроса через пробел.\nПример: 7 12")
+    await c.message.answer("Отправь ID теста и ID вопроса через пробел.\nПример: 7 12")
 
 
 @router.callback_query(F.data == "t:q_del")
@@ -446,8 +446,8 @@ async def t_q_del(c: CallbackQuery, state: FSMContext, api: BotLogicAPI):
     if not await _is_authorized(c.message, api):
         await _deny_not_auth(c.message)
         return
-    await _set_action(state, "t:q_del", "Введи: <test_id> <question_id>")
-    await c.message.answer("Введи: <test_id> <question_id>")
+    await _set_action(state, "t:q_del", "Отправь ID теста и ID вопроса через пробел.\nПример: 7 12")
+    await c.message.answer("Отправь ID теста и ID вопроса через пробел.\nПример: 7 12")
 
 
 @router.callback_query(F.data == "t:q_order")
@@ -456,8 +456,8 @@ async def t_q_order(c: CallbackQuery, state: FSMContext, api: BotLogicAPI):
     if not await _is_authorized(c.message, api):
         await _deny_not_auth(c.message)
         return
-    await _set_action(state, "t:q_order", "Введи: <test_id> q1,q2,q3")
-    await c.message.answer("Введи: <test_id> q1,q2,q3")
+    await _set_action(state, "t:q_order", "Отправь ID теста и порядок вопросов (ID через запятую).\nПример: 7 12,15,18")
+    await c.message.answer("Отправь ID теста и порядок вопросов (ID через запятую).\nПример: 7 12,15,18")
 
 
 @router.callback_query(F.data == "t:users")
@@ -466,8 +466,8 @@ async def t_users(c: CallbackQuery, state: FSMContext, api: BotLogicAPI):
     if not await _is_authorized(c.message, api):
         await _deny_not_auth(c.message)
         return
-    await _set_action(state, "t:users", "Введи ID теста:")
-    await c.message.answer("Введи ID теста:")
+    await _set_action(state, "t:users", "Введи ID теста (число).")
+    await c.message.answer("Введи ID теста (число).")
 
 
 @router.callback_query(F.data == "t:grades")
@@ -476,8 +476,8 @@ async def t_grades(c: CallbackQuery, state: FSMContext, api: BotLogicAPI):
     if not await _is_authorized(c.message, api):
         await _deny_not_auth(c.message)
         return
-    await _set_action(state, "t:grades", "Введи ID теста:")
-    await c.message.answer("Введи ID теста:")
+    await _set_action(state, "t:grades", "Введи ID теста (число).")
+    await c.message.answer("Введи ID теста (число).")
 
 
 @router.callback_query(F.data == "t:answers")
@@ -486,8 +486,8 @@ async def t_answers(c: CallbackQuery, state: FSMContext, api: BotLogicAPI):
     if not await _is_authorized(c.message, api):
         await _deny_not_auth(c.message)
         return
-    await _set_action(state, "t:answers", "Введи ID теста:")
-    await c.message.answer("Введи ID теста:")
+    await _set_action(state, "t:answers", "Введи ID теста (число).")
+    await c.message.answer("Введи ID теста (число).")
 
 
 # ========= ATTEMPT callbacks =========
@@ -498,8 +498,8 @@ async def a_start(c: CallbackQuery, state: FSMContext, api: BotLogicAPI):
     if not await _is_authorized(c.message, api):
         await _deny_not_auth(c.message)
         return
-    await _set_action(state, "a:start", "Введи ID теста:")
-    await c.message.answer("Введи ID теста:")
+    await _set_action(state, "a:start", "Введи ID теста (число).")
+    await c.message.answer("Введи ID теста (число).")
 
 
 @router.callback_query(F.data == "a:get")
@@ -508,8 +508,8 @@ async def a_get(c: CallbackQuery, state: FSMContext, api: BotLogicAPI):
     if not await _is_authorized(c.message, api):
         await _deny_not_auth(c.message)
         return
-    await _set_action(state, "a:get", "Введи ID теста:")
-    await c.message.answer("Введи ID теста:")
+    await _set_action(state, "a:get", "Введи ID теста (число).")
+    await c.message.answer("Введи ID теста (число).")
 
 
 @router.callback_query(F.data == "a:finish")
@@ -518,8 +518,8 @@ async def a_finish(c: CallbackQuery, state: FSMContext, api: BotLogicAPI):
     if not await _is_authorized(c.message, api):
         await _deny_not_auth(c.message)
         return
-    await _set_action(state, "a:finish", "Введи ID теста:")
-    await c.message.answer("Введи ID теста:")
+    await _set_action(state, "a:finish", "Завершить попытку: введи ID попытки.\nПример: 55")
+    await c.message.answer("Завершить попытку: введи ID попытки.\nПример: 55")
 
 
 # ========= ANSWERS callbacks =========
@@ -530,8 +530,8 @@ async def ans_get(c: CallbackQuery, state: FSMContext, api: BotLogicAPI):
     if not await _is_authorized(c.message, api):
         await _deny_not_auth(c.message)
         return
-    await _set_action(state, "ans:get", "Введи ID ответа:")
-    await c.message.answer("Введи ID ответа:")
+    await _set_action(state, "ans:get", "Введи ID ответа (число).")
+    await c.message.answer("Введи ID ответа (число).")
 
 
 @router.callback_query(F.data == "ans:set")
@@ -540,8 +540,8 @@ async def ans_set(c: CallbackQuery, state: FSMContext, api: BotLogicAPI):
     if not await _is_authorized(c.message, api):
         await _deny_not_auth(c.message)
         return
-    await _set_action(state, "ans:set", "Введи: <answer_id> <variant_index>")
-    await c.message.answer("Введи: <answer_id> <variant_index>")
+    await _set_action(state, "ans:set", "Ответ на вопрос: отправь одной строкой\nID попытки | ID вопроса | Номер выбранного варианта (варианты считаются с нуля)\nПример: 21 12 0")
+    await c.message.answer("Ответ на вопрос: отправь одной строкой\nID попытки | ID вопроса | Номер выбранного варианта (варианты считаются с нуля)\nПример: 21 12 0")
 
 
 @router.callback_query(F.data == "ans:del")
@@ -550,8 +550,8 @@ async def ans_del(c: CallbackQuery, state: FSMContext, api: BotLogicAPI):
     if not await _is_authorized(c.message, api):
         await _deny_not_auth(c.message)
         return
-    await _set_action(state, "ans:del", "Введи ID ответа:")
-    await c.message.answer("Введи ID ответа:")
+    await _set_action(state, "ans:del", "Введи ID ответа (число).")
+    await c.message.answer("Введи ID ответа (число).")
 
 
 # ========= FSM input handler =========

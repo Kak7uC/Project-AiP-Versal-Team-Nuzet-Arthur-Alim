@@ -16,11 +16,11 @@ class Settings(BaseSettings):
     model_config = SettingsConfigDict(
         env_file=_find_env_file() or ".env",
         env_file_encoding="utf-8",
-        extra="ignore"
+        extra="ignore"  
     )
 
     BOT_TOKEN: str
-    BOTLOGIC_BASE_URL: str = "http://localhost:8080"
+    BOTLOGIC_BASE_URL: str = "http://127.0.0.1:8081"
     HTTP_TIMEOUT_SEC: float = 8.0
 
 
