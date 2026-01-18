@@ -13,7 +13,6 @@ redis.connect().then(() => console.log('✅ Web Client подключен к Red
 const AUTH_MODULE_URL = 'http://localhost:8080';
 const CPP_SERVER_URL = 'http://localhost:7081';
 
-// Обновление токена
 async function refreshAccessToken(sessionToken, refreshToken) {
 	try {
 		console.log("🔄 Токен истекает. Обновляю через Go...");
@@ -36,8 +35,6 @@ async function refreshAccessToken(sessionToken, refreshToken) {
 
 		const userData = JSON.parse(cachedData);
 		userData.accessToken = data.access_token;
-
-		// ВАЖНО: Обновляем роль в Redis, если она изменилась
 		try {
 			const tokenPart = data.access_token.split('.')[1];
 			const payload = JSON.parse(Buffer.from(tokenPart, 'base64').toString());
@@ -107,8 +104,6 @@ async function callCpp(action, params = {}, req) {
 	return result;
 }
 
-
-// Проверка статуса
 app.get('/api/auth/status', async (req, res) => {
 	const sessionToken = req.cookies['session_token'];
 	if (!sessionToken) return res.json({ status: 'Unknown' });
@@ -146,7 +141,6 @@ app.get('/api/auth/status', async (req, res) => {
 	}
 });
 
-// Инициализация входа
 app.get('/api/auth/init', async (req, res) => {
 	const { type } = req.query;
 	const sessionToken = uuidv4();
@@ -171,13 +165,12 @@ app.get('/api/auth/confirm', async (req, res) => {
 			if (response.ok) {
 				const authResult = await response.json();
 				if (authResult.status === 'granted' && authResult.access_token) {
-					// !!! ПАРСИМ РОЛЬ !!!
 					const payload = JSON.parse(Buffer.from(authResult.access_token.split('.')[1], 'base64').toString());
 
 					const authorizedData = {
 						status: 'Authorized',
 						userName: user,
-						role: payload.role || 'Student', // <--- БЕРЕМ ИЗ ТОКЕНА
+						role: payload.role || 'Student',
 						accessToken: authResult.access_token,
 						refreshToken: authResult.refresh_token
 					};
@@ -199,30 +192,32 @@ app.post('/api/auth/logout', async (req, res) => {
 
 
 app.get('/api/user/me', (req, res) =>
-	callCpp('VIEW_OWN_NAME', {}, req).then(r => res.status(r.status).send(r.body)));
+	callCpp('VIEW_OWN_NAME', {}, req).then(r => res.status(r.status).send(r.body))
+);
 
 app.get('/api/user/update-name', (req, res) =>
 	callCpp('EDIT_OWN_NAME', { New_name: req.query.first, New_lastname: req.query.last }, req)
-		.then(r => res.status(r.status).send(r.body)));
+		.then(r => res.status(r.status).send(r.body))
+);
 
 app.get('/api/student/dashboard', (req, res) =>
-	callCpp('VIEW_OWN_DATA', {}, req).then(r => res.status(r.status).send(r.body)));
+	callCpp('VIEW_OWN_DATA', {}, req).then(r => res.status(r.status).send(r.body))
+);
 
 app.get('/api/admin/users', (req, res) =>
-	callCpp('VIEW_ALL_USERS', {}, req).then(r => res.status(r.status).send(r.body)));
+	callCpp('VIEW_ALL_USERS', {}, req).then(r => res.status(r.status).send(r.body))
+);
 
-// Смена роли
 app.post('/api/admin/role', (req, res) =>
 	callCpp('EDIT_OTHER_ROLES', { Target_ID: req.body.userId, Target_ROLE: req.body.newRole }, req)
-		.then(r => res.status(r.status).send(r.body)));
+		.then(r => res.status(r.status).send(r.body))
+);
 
-// Запись студента на курс
 app.post('/api/course/enroll', (req, res) =>
 	callCpp('ENROLL_STUDENT', { Course_ID: req.body.courseId, Target_ID: req.body.studentId }, req)
-		.then(r => res.status(r.status).send(r.body)));
+		.then(r => res.status(r.status).send(r.body))
+);
 
-
-// получить статус блокировки пользователя
 app.get('/api/admin/blocked', async (req, res) => {
 	try {
 		const sessionToken = req.cookies['session_token'];
@@ -257,7 +252,6 @@ app.get('/api/admin/blocked', async (req, res) => {
 	}
 });
 
-// заблокировать / разблокировать
 app.post('/api/admin/blocked', async (req, res) => {
 	try {
 		const sessionToken = req.cookies['session_token'];
@@ -350,10 +344,12 @@ app.post('/api/course/create', async (req, res) => {
 
 app.post('/api/course/edit', (req, res) =>
 	callCpp('EDIT_COURSE_INFO', { Course_ID: req.body.courseId, Course_NAME: req.body.name, Description: req.body.description }, req)
-		.then(r => res.status(r.status).send(r.body)));
+		.then(r => res.status(r.status).send(r.body))
+);
 
 app.post('/api/course/delete', (req, res) =>
-	callCpp('DELETE_COURSE', { Course_ID: req.body.courseId }, req).then(r => res.status(r.status).send(r.body)));
+	callCpp('DELETE_COURSE', { Course_ID: req.body.courseId }, req).then(r => res.status(r.status).send(r.body))
+);
 
 app.post('/api/test/create-full', async (req, res) => {
 	try {
@@ -382,7 +378,8 @@ app.post('/api/test/create-full', async (req, res) => {
 
 app.post('/api/test/delete', (req, res) =>
 	callCpp('DELETE_TEST', { Course_ID: req.body.courseId, Test_ID: req.body.testId }, req)
-		.then(r => res.status(r.status).send(r.body)));
+		.then(r => res.status(r.status).send(r.body))
+);
 
 
 
