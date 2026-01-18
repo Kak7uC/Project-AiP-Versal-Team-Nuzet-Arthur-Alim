@@ -11,13 +11,9 @@ const redis = createClient({ url: 'redis://localhost:6379' });
 redis.connect().then(() => console.log('✅ Web Client подключен к Redis'));
 
 const AUTH_MODULE_URL = 'http://localhost:8080';
-const CPP_SERVER_URL = 'http://localhost:8081';
+const CPP_SERVER_URL = 'http://localhost:7081';
 
-// =======================================================
-// 1. ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ (Refresh & Proxy)
-// =======================================================
-
-// Обновление токена (и роли!)
+// Обновление токена
 async function refreshAccessToken(sessionToken, refreshToken) {
 	try {
 		console.log("🔄 Токен истекает. Обновляю через Go...");
@@ -59,7 +55,6 @@ async function refreshAccessToken(sessionToken, refreshToken) {
 	}
 }
 
-// Умный прокси к C++
 async function callCpp(action, params = {}, req) {
 	const sessionToken = req.cookies['session_token'];
 	if (!sessionToken) return { status: 401, body: "No session cookie" };
@@ -70,7 +65,6 @@ async function callCpp(action, params = {}, req) {
 	let user = JSON.parse(cachedData);
 	if (!user.accessToken) return { status: 401, body: "No token" };
 
-	// Проактивное обновление (если осталось мало времени)
 	let currentToken = user.accessToken;
 	try {
 		const payload = JSON.parse(Buffer.from(currentToken.split('.')[1], 'base64').toString());
@@ -104,7 +98,6 @@ async function callCpp(action, params = {}, req) {
 
 	let result = await performRequest(currentToken);
 
-	// Реактивное обновление (если 401)
 	if (result.status === 401 || result.body.includes("ERROR 401") || result.body.includes("Token expired")) {
 		const newToken = await refreshAccessToken(sessionToken, user.refreshToken);
 		if (newToken) result = await performRequest(newToken);
@@ -114,11 +107,8 @@ async function callCpp(action, params = {}, req) {
 	return result;
 }
 
-// =======================================================
-// 2. АВТОРИЗАЦИЯ И СЕССИИ
-// =======================================================
 
-// Проверка статуса (ТУТ БЫЛА ОШИБКА, ИСПРАВЛЕНО)
+// Проверка статуса
 app.get('/api/auth/status', async (req, res) => {
 	const sessionToken = req.cookies['session_token'];
 	if (!sessionToken) return res.json({ status: 'Unknown' });
@@ -129,19 +119,17 @@ app.get('/api/auth/status', async (req, res) => {
 	try {
 		let data = JSON.parse(cachedData);
 
-		// Если мы в процессе входа (Anonymous + loginToken) -> проверяем статус в Go
 		if (data.status === 'Anonymous' && data.loginToken) {
 			const response = await fetch(`${AUTH_MODULE_URL}/api/auth/check/${data.loginToken}`);
 			if (response.ok) {
 				const authResult = await response.json();
 				if (authResult.status === 'granted') {
-					// !!! ВАЖНО: Парсим роль из токена ПРАВИЛЬНО !!!
 					const tokenParts = authResult.access_token.split('.');
 					const payload = JSON.parse(Buffer.from(tokenParts[1], 'base64').toString());
 
 					const authorizedData = {
 						status: 'Authorized',
-						role: payload.role || 'Student', // <--- ВОТ ЗДЕСЬ БЫЛА ОШИБКА
+						role: payload.role || 'Student',
 						userName: authResult.user_name || 'User',
 						accessToken: authResult.access_token,
 						refreshToken: authResult.refresh_token
@@ -173,7 +161,6 @@ app.get('/api/auth/init', async (req, res) => {
 	} catch (e) { res.status(500).json({ error: "Auth Error" }); }
 });
 
-// Callback от Go (здесь тоже парсим роль)
 app.get('/api/auth/confirm', async (req, res) => {
 	const { state, user } = req.query;
 	const sessionToken = req.cookies['session_token'];
@@ -210,9 +197,6 @@ app.post('/api/auth/logout', async (req, res) => {
 	res.json({ status: 'LoggedOut' });
 });
 
-// =======================================================
-// 3. API ПОЛЬЗОВАТЕЛЯ
-// =======================================================
 
 app.get('/api/user/me', (req, res) =>
 	callCpp('VIEW_OWN_NAME', {}, req).then(r => res.status(r.status).send(r.body)));
@@ -223,10 +207,6 @@ app.get('/api/user/update-name', (req, res) =>
 
 app.get('/api/student/dashboard', (req, res) =>
 	callCpp('VIEW_OWN_DATA', {}, req).then(r => res.status(r.status).send(r.body)));
-
-// =======================================================
-// 4. API АДМИНА И УЧИТЕЛЯ
-// =======================================================
 
 app.get('/api/admin/users', (req, res) =>
 	callCpp('VIEW_ALL_USERS', {}, req).then(r => res.status(r.status).send(r.body)));
@@ -241,10 +221,6 @@ app.post('/api/course/enroll', (req, res) =>
 	callCpp('ENROLL_STUDENT', { Course_ID: req.body.courseId, Target_ID: req.body.studentId }, req)
 		.then(r => res.status(r.status).send(r.body)));
 
-
-// =======================================================
-// ADMIN: BLOCK/UNBLOCK (напрямую через Go, C++ не трогаем)
-// =======================================================
 
 // получить статус блокировки пользователя
 app.get('/api/admin/blocked', async (req, res) => {
@@ -261,7 +237,6 @@ app.get('/api/admin/blocked', async (req, res) => {
 		const userId = req.query.userId;
 		if (!userId) return res.status(400).json({ error: "userId required" });
 
-		// вызываем Go /api/user/blocked?ID=TARGET
 		const url = new URL(`${AUTH_MODULE_URL}/api/user/blocked`);
 		url.searchParams.append("ID", userId);
 
@@ -271,7 +246,6 @@ app.get('/api/admin/blocked', async (req, res) => {
 
 		const text = await r.text();
 
-		// пробуем JSON, если не JSON — отдаём как есть
 		try {
 			return res.status(r.status).json(JSON.parse(text));
 		} catch {
@@ -300,11 +274,9 @@ app.post('/api/admin/blocked', async (req, res) => {
 			return res.status(400).json({ error: "userId and blocked(boolean) required" });
 		}
 
-		// Go /api/user/blockededit?ID=...&ACTION=...
 		const url = new URL(`${AUTH_MODULE_URL}/api/user/blockededit`);
 		url.searchParams.append("ID", userId);
 
-		// попробуем сначала block/unblock, если Go ждёт другое — ниже будет fallback
 		url.searchParams.append("ACTION", blocked ? "block" : "unblock");
 
 		let r = await fetch(url.toString(), {
@@ -313,7 +285,6 @@ app.post('/api/admin/blocked', async (req, res) => {
 
 		let text = await r.text();
 
-		// fallback: если Go не понял block/unblock, попробуем 1/0
 		if (!r.ok) {
 			const url2 = new URL(`${AUTH_MODULE_URL}/api/user/blockededit`);
 			url2.searchParams.append("ID", userId);
@@ -335,20 +306,15 @@ app.post('/api/admin/blocked', async (req, res) => {
 		return res.status(500).json({ error: "Server error" });
 	}
 });
-// =======================================================
-// 5. КУРСЫ (Создание, Получение всех)
-// =======================================================
 
 app.get('/api/courses/all', async (req, res) => {
 	try {
-		// 1. Получаем курсы
 		const coursesRes = await callCpp('VIEW_ALL_COURSES', {}, req);
 		if (coursesRes.status !== 200) return res.status(coursesRes.status).send(coursesRes.body);
 
 		const coursesData = JSON.parse(coursesRes.body);
 		if (!coursesData.courses) return res.json({ courses: [] });
 
-		// 2. Подгружаем тесты для каждого курса
 		const coursesWithTests = await Promise.all(coursesData.courses.map(async (course) => {
 			const testsRes = await callCpp('VIEW_COURSE_TESTS', { Course_ID: course.id }, req);
 			let tests = [];
@@ -389,20 +355,14 @@ app.post('/api/course/edit', (req, res) =>
 app.post('/api/course/delete', (req, res) =>
 	callCpp('DELETE_COURSE', { Course_ID: req.body.courseId }, req).then(r => res.status(r.status).send(r.body)));
 
-// =======================================================
-// 6. ТЕСТЫ И ВОПРОСЫ
-// =======================================================
-
 app.post('/api/test/create-full', async (req, res) => {
 	try {
 		const { courseId, title, questions } = req.body;
-		// 1. Создаем тест
 		const testRes = await callCpp('CREATE_TEST', { Course_ID: courseId, Title: title }, req);
 		const testData = JSON.parse(testRes.body);
 		if (testData.error || !testData.test_id) return res.status(400).send(testRes.body);
 		const testId = testData.test_id;
 
-		// 2. Создаем вопросы
 		for (const q of questions) {
 			const qRes = await callCpp('CREATE_QUESTION', {
 				Title: q.text.substring(0, 30) + "...",
@@ -411,12 +371,10 @@ app.post('/api/test/create-full', async (req, res) => {
 				Answer_Index: q.correctIndex
 			}, req);
 			const qData = JSON.parse(qRes.body);
-			// 3. Привязываем
 			if (qData.question_id) {
 				await callCpp('ADD_QUESTION_TO_TEST', { Test_ID: testId, Question_ID: qData.question_id }, req);
 			}
 		}
-		// 4. Активируем
 		await callCpp('TOGGLE_TEST_ACTIVE', { Course_ID: courseId, Test_ID: testId, Activate: "true" }, req);
 		res.json({ status: "success", test_id: testId });
 	} catch (e) { res.status(500).json({ error: "Failed to create test" }); }
@@ -427,33 +385,26 @@ app.post('/api/test/delete', (req, res) =>
 		.then(r => res.status(r.status).send(r.body)));
 
 
-// =======================================================
-// TEACHER/ADMIN: TEST ACTIVE + ATTEMPTS
-// =======================================================
 
-// Узнать активен ли тест
 app.get('/api/test/active', (req, res) =>
 	callCpp('CHECK_TEST_ACTIVE', { Course_ID: req.query.courseId, Test_ID: req.query.testId }, req)
 		.then(r => res.status(r.status).send(r.body))
 );
 
-// Включить/выключить тест
 app.post('/api/test/active', (req, res) =>
 	callCpp('TOGGLE_TEST_ACTIVE', {
 		Course_ID: req.body.courseId,
 		Test_ID: req.body.testId,
-		Activate: String(!!req.body.activate) // "true"/"false"
+		Activate: String(!!req.body.activate) 
 	}, req).then(r => res.status(r.status).send(r.body))
 );
 
-// Посмотреть попытки студентов по тесту (для учителя/админа)
 app.get('/api/test/attempts', (req, res) =>
 	callCpp('VIEW_TEST_ATTEMPTS', { Test_ID: req.query.testId }, req)
 		.then(r => res.status(r.status).send(r.body))
 );
 
 
-// Студенческая часть
 app.post('/api/test/start', (req, res) =>
 	callCpp('CREATE_ATTEMPT', { Test_ID: req.body.testId }, req).then(r => res.status(r.status).send(r.body))
 );

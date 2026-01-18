@@ -3,14 +3,11 @@ import React from 'react';
 export default function AuthPage() {
 	const startLogin = async (type) => {
 		try {
-			// 1. Обращаемся к нашему серверу (server.js)
 			const response = await fetch(`/api/auth/init?type=${type}`, {
 				credentials: 'include'
 			});
 
 			const data = await response.json();
-
-			// 2. Уходим на страницу авторизации
 			window.location.href = data.url;
 		} catch (err) {
 			alert("Ошибка подключения к серверу");

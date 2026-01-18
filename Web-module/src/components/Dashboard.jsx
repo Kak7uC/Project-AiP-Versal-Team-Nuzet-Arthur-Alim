@@ -6,32 +6,25 @@ const Dashboard = ({ user, onLogout }) => {
 	const [activeTab, setActiveTab] = useState('home');
 	const [startedTest, setStartedTest] = useState(null);
 	const [editMode, setEditMode] = useState(false);
-	const [isCreatingTest, setIsCreatingTest] = useState(null); // null или { courseId, courseName }
-	const [testActiveMap, setTestActiveMap] = useState({}); // { [testId]: true/false }
-	const [attemptsModal, setAttemptsModal] = useState(null); // null или { testId, testName, data: [] }
+	const [isCreatingTest, setIsCreatingTest] = useState(null); 
+	const [testActiveMap, setTestActiveMap] = useState({});
+	const [attemptsModal, setAttemptsModal] = useState(null);
 
 
 	// Состояния для реальных данных
-	const [courses, setCourses] = useState([]); // Сюда загрузим курсы из БД
-	const [blockedMap, setBlockedMap] = useState({}); // { [userId]: true/false }
+	const [courses, setCourses] = useState([]); 
+	const [blockedMap, setBlockedMap] = useState({});
 
-	const [userList, setUserList] = useState([]); // Сюда загрузим юзеров (для админа)
+	const [userList, setUserList] = useState([]); 
 	const [newName, setNewName] = useState({ first: '', last: '' });
 	const [isLoading, setIsLoading] = useState(false);
 
 	const isAdmin = user?.role === 'Admin';
 	const isTeacher = user?.role === 'Teacher';
-	// const isStudent = false //user?.role === 'Student' || (!isAdmin && !isTeacher);
 
-	// --- 1. ЕДИНСТВЕННАЯ ФУНКЦИЯ ЗАГРУЗКИ КУРСОВ ---
 	const fetchCourses = async () => {
 		try {
-			// ЛОГИКА:
-			// 1. По умолчанию грузим ЛИЧНЫЕ данные (чтобы видеть оценки).
 			let endpoint = '/api/student/dashboard';
-
-			// 2. И только если мы Админ/Учитель И сидим на вкладке "Дисциплины" (home),
-			// тогда грузим ВСЕ курсы (чтобы можно было их редактировать).
 			if (activeTab === 'home' && (isAdmin || isTeacher)) {
 				endpoint = '/api/courses/all';
 			}
@@ -42,7 +35,6 @@ const Dashboard = ({ user, onLogout }) => {
 			if (res.ok) {
 				const data = await res.json();
 
-				// Защита от сбоя
 				if (data.error) {
 					console.error("Ошибка от сервера:", data.error);
 					return;
@@ -68,16 +60,13 @@ const Dashboard = ({ user, onLogout }) => {
 		}
 	};
 
-	// --- ОБНОВЛЕНИЕ ПРИ СМЕНЕ ВКЛАДКИ ---
 	useEffect(() => {
-		// Грузим данные только если открыты вкладки 'home' или 'results'
 		if (activeTab === 'home' || activeTab === 'results') {
 			fetchCourses();
 		}
 	}, [activeTab, isAdmin, isTeacher]);
 
 
-	// --- 2. ЗАГРУЗКА ПОЛЬЗОВАТЕЛЕЙ
 	useEffect(() => {
 		if (activeTab === 'users' && isAdmin) {
 			const fetchUsers = async () => {
@@ -86,13 +75,11 @@ const Dashboard = ({ user, onLogout }) => {
 					if (res.ok) {
 						const data = await res.json();
 						console.log("📦 Данные курсов из БД:", data);
-						// Предполагаем, что C++ вернет массив или объект с массивом
-						// Адаптируй этот момент, если формат C++ отличается
+
 						setUserList(Array.isArray(data) ? data : (data.users || []));
 						const usersArr = Array.isArray(data) ? data : (data.users || []);
 						setUserList(usersArr);
 
-						// Подгружаем статус блокировки для каждого
 						const pairs = await Promise.all(usersArr.map(async (u) => {
 							try {
 								const br = await fetch(`/api/admin/blocked?userId=${encodeURIComponent(u.id)}`);
@@ -115,22 +102,16 @@ const Dashboard = ({ user, onLogout }) => {
 		}
 	}, [activeTab, isAdmin]);
 
-	// --- 3. КНОПКА "СОХРАНИТЬ" (Смена имени) ---
 	const handleUpdateName = async () => {
-		// Простая валидация
 		if (!newName.first && !newName.last) return;
 
 		try {
-			// Формируем запрос
-			// encodeURIComponent обязателен для кириллицы
 			const res = await fetch(`/api/user/update-name?first=${encodeURIComponent(newName.first)}&last=${encodeURIComponent(newName.last)}`);
 			const text = await res.text();
-
-			// Проверяем ответ C++ (он обычно возвращает "SUCCESS..." или "ERROR...")
 			if (text.includes("SUCCESS") || !text.includes("ERROR")) {
 				alert("Данные обновлены: " + text);
 				setEditMode(false);
-				window.location.reload(); // Перезагружаем, чтобы в шапке обновилось имя
+				window.location.reload();
 			} else {
 				alert("Ошибка обновления: " + text);
 			}
@@ -140,8 +121,6 @@ const Dashboard = ({ user, onLogout }) => {
 		}
 	};
 
-
-	// --- СМЕНА РОЛИ (АДМИН) ---
 	const handleRoleChange = async (userId, newRole) => {
 		if (!confirm(`Вы уверены, что хотите назначить роль ${newRole}?`)) return;
 		setIsLoading(true);
@@ -155,7 +134,6 @@ const Dashboard = ({ user, onLogout }) => {
 
 			if (data.success) {
 				alert("Роль успешно изменена!");
-				// Обновляем список пользователей
 				const uRes = await fetch('/api/admin/users');
 				const uData = await uRes.json();
 				setUserList(Array.isArray(uData) ? uData : (uData.users || []));
@@ -187,7 +165,6 @@ const Dashboard = ({ user, onLogout }) => {
 				return;
 			}
 
-			// обновляем локально
 			setBlockedMap((m) => ({ ...m, [userId]: nextBlocked }));
 		} catch (e) {
 			alert("Ошибка сети");
@@ -196,8 +173,6 @@ const Dashboard = ({ user, onLogout }) => {
 		}
 	};
 
-
-	// --- ЗАПИСЬ СТУДЕНТА (УЧИТЕЛЬ) ---
 	const handleEnrollStudent = async (courseId) => {
 		const studentId = prompt("Введите ID студента (например: github_12345):");
 		if (!studentId) return;
@@ -223,10 +198,7 @@ const Dashboard = ({ user, onLogout }) => {
 		}
 	};
 
-
-	// --- СОЗДАНИЕ КУРСА ---
 	const handleCreateCourse = async () => {
-		// 1. Простой способ спросить данные (можно заменить на красивое модальное окно потом)
 		const name = prompt("Введите название нового курса:");
 		if (!name) return;
 
@@ -240,7 +212,7 @@ const Dashboard = ({ user, onLogout }) => {
 				body: JSON.stringify({
 					name,
 					description,
-					teacherId: "SELF" // Метка для Node.js
+					teacherId: "SELF"
 				})
 			});
 
@@ -248,7 +220,6 @@ const Dashboard = ({ user, onLogout }) => {
 
 			if (data.status === 'success' || data.course_id) {
 				alert(`Курс "${data.course_name}" успешно создан!`);
-				// Перезагружаем страницу, чтобы курс появился в списке
 				window.location.reload();
 			} else {
 				alert("Ошибка создания: " + (data.error || JSON.stringify(data)));
@@ -262,7 +233,6 @@ const Dashboard = ({ user, onLogout }) => {
 		}
 	};
 
-	// --- ФУНКЦИЯ РЕДАКТИРОВАНИЯ КУРСА ---
 	const handleEditCourse = async (courseId, currentName, currentDesc) => {
 		const newName = prompt("Новое название курса:", currentName);
 		if (newName === null) return;
@@ -281,11 +251,9 @@ const Dashboard = ({ user, onLogout }) => {
 				})
 			});
 
-			// Читаем как текст, чтобы не падать на JSON.parse
 			const text = await res.text();
 			console.log("Ответ сервера при редактировании:", text);
 
-			// Если статус 200 - считаем успехом, даже если JSON кривой
 			if (res.ok) {
 				alert("Курс обновлен!");
 				fetchCourses();
@@ -309,7 +277,6 @@ const Dashboard = ({ user, onLogout }) => {
 				headers: { 'Content-Type': 'application/json' },
 				body: JSON.stringify({ courseId })
 			});
-			// Обновляем список
 			const endpoint = (isAdmin || isTeacher) ? '/api/courses/all' : '/api/student/dashboard';
 			const res = await fetch(endpoint);
 			const data = await res.json();
@@ -333,8 +300,6 @@ const Dashboard = ({ user, onLogout }) => {
 		} catch (e) { alert("Ошибка сохранения"); } finally { setIsLoading(false); }
 	};
 
-	// --- ДЕЙСТВИЯ С ТЕСТАМИ ---
-
 	const handleDeleteTest = async (courseId, testId) => {
 		if (!confirm("Удалить этот тест?")) return;
 		setIsLoading(true);
@@ -344,7 +309,6 @@ const Dashboard = ({ user, onLogout }) => {
 				headers: { 'Content-Type': 'application/json' },
 				body: JSON.stringify({ courseId, testId })
 			});
-			// Обновляем список (просто перезагружаем курсы)
 			const endpoint = (isAdmin || isTeacher) ? '/api/courses/all' : '/api/student/dashboard';
 			const res = await fetch(endpoint);
 			const data = await res.json();
@@ -377,13 +341,11 @@ const Dashboard = ({ user, onLogout }) => {
 			const text = await res.text();
 			if (!res.ok) return alert("Ошибка: " + text);
 
-			// пробуем JSON
 			try {
 				const data = JSON.parse(text);
 				if (typeof data.is_active === "boolean") {
 					setTestActiveMap(m => ({ ...m, [testId]: data.is_active }));
 				} else {
-					// если сервер не вернул is_active — просто обновим через fetch
 					fetchTestActive(courseId, testId);
 				}
 			} catch {
@@ -452,7 +414,6 @@ const Dashboard = ({ user, onLogout }) => {
 			if (data.status === 'success' || data.test_id) {
 				alert("Тест создан!");
 				setIsCreatingTest(null);
-				// Тут можно вызвать fetchCourses(), если вынесешь его наружу из useEffect
 				window.location.reload();
 			} else {
 				alert("Ошибка: " + JSON.stringify(data));
@@ -464,12 +425,10 @@ const Dashboard = ({ user, onLogout }) => {
 		}
 	};
 
-	// --- ЗАПУСК ТЕСТА (ИСПРАВЛЕННАЯ) ---
 	const handleStartTest = async (rawTestId, testName) => {
-		// Защита: Убедимся, что ID это строка и без пробелов
 		const testId = String(rawTestId).trim();
 
-		console.log("🚀 Попытка запуска теста. ID:", testId); // <--- СМОТРИ СЮДА В КОНСОЛЬ
+		console.log("🚀 Попытка запуска теста. ID:", testId);
 
 		if (!testId || testId === "undefined") {
 			return alert("Ошибка: Некорректный ID теста. Попробуйте обновить страницу.");
@@ -477,7 +436,6 @@ const Dashboard = ({ user, onLogout }) => {
 
 		setIsLoading(true);
 		try {
-			// 1. Создаем попытку в БД
 			const startRes = await fetch('/api/test/start', {
 				method: 'POST',
 				headers: { 'Content-Type': 'application/json' },
@@ -491,7 +449,6 @@ const Dashboard = ({ user, onLogout }) => {
 				return;
 			}
 
-			// ... Остальной код получения вопросов без изменений ...
 			const attemptId = startData.attempt_id;
 			const attemptInfoRes = await fetch(`/api/proxy/attempt?id=${testId}`);
 			const attemptInfo = await attemptInfoRes.json();
@@ -527,15 +484,12 @@ const Dashboard = ({ user, onLogout }) => {
 		}
 	};
 
-	// Компонент карточки курса (Адаптирован под данные из БД)
-	// Компонент карточки курса (ОБНОВЛЕННЫЙ)
 	const CourseCard = ({ course }) => (
 		<div style={styles.courseCard}>
 			<div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '10px' }}>
 				<span style={{ fontSize: '32px' }}>📚</span>
 				{(isAdmin || isTeacher) && (
 					<div style={{ display: 'flex', gap: '8px' }}>
-						{/* Кнопка РЕДАКТИРОВАТЬ (пока просто алерт, или сделай prompt как для создания) */}
 						<button
 							title="Редактировать курс"
 							style={styles.iconBtn}
@@ -548,7 +502,6 @@ const Dashboard = ({ user, onLogout }) => {
 							✏️
 						</button>
 
-						{/* Кнопка УДАЛИТЬ КУРС (Новая) */}
 						<button
 							title="Удалить курс"
 							style={{ ...styles.iconBtn, backgroundColor: '#fee2e2', color: 'red' }}
@@ -562,7 +515,6 @@ const Dashboard = ({ user, onLogout }) => {
 			<p style={styles.courseDesc}>{course.description || "Нет описания"}</p>
 
 			<div style={{ marginTop: 'auto', display: 'flex', flexDirection: 'column', gap: '8px' }}>
-				{/* Список тестов */}
 				{course.tests && course.tests.length > 0 ? (
 					course.tests.map(test => {
 						const testId = test.test_id || test.id;
@@ -570,7 +522,6 @@ const Dashboard = ({ user, onLogout }) => {
 
 						return (
 							<div key={testId} style={{ display: 'flex', gap: '5px', alignItems: 'center' }}>
-								{/* Запуск */}
 								<button
 									style={{ ...styles.primaryBtn, marginBottom: 0 }}
 									onClick={() => handleStartTest(testId, test.test_title || test.title)}
@@ -580,7 +531,6 @@ const Dashboard = ({ user, onLogout }) => {
 
 								{(isAdmin || isTeacher) && (
 									<>
-										{/* ON/OFF */}
 										<button
 											title="Включить/выключить тест"
 											style={{
@@ -599,7 +549,6 @@ const Dashboard = ({ user, onLogout }) => {
 											{testActiveMap[testId] ? "ON" : "OFF"}
 										</button>
 
-										{/* Attempts */}
 										<button
 											title="Посмотреть попытки"
 											style={{
@@ -615,7 +564,6 @@ const Dashboard = ({ user, onLogout }) => {
 											👥
 										</button>
 
-										{/* Удалить тест */}
 										<button
 											style={{
 												width: '40px',
@@ -641,7 +589,6 @@ const Dashboard = ({ user, onLogout }) => {
 					<div style={{ color: '#999', fontSize: '13px', fontStyle: 'italic' }}>Нет тестов</div>
 				)}
 
-				{/* Кнопка добавления теста */}
 				{(isTeacher || isAdmin) && (
 					<button
 						style={{ ...styles.outlineBtn, marginTop: '10px', width: '100%' }}
@@ -654,7 +601,6 @@ const Dashboard = ({ user, onLogout }) => {
 					</button>
 				)}
 
-				{/* КНОПКА ЗАПИСАТЬ СТУДЕНТА (Только для учителя/админа) */}
 				{(isTeacher || isAdmin) && (
 					<button
 						style={{ ...styles.outlineBtn, marginTop: '5px', borderColor: '#10b981', color: '#10b981' }}
@@ -680,12 +626,10 @@ const Dashboard = ({ user, onLogout }) => {
 			{label}
 		</div>
 	);
-	// --- ЗАВЕРШЕНИЕ ТЕСТА (С ДЕТАЛЬНЫМ ОТЧЕТОМ ОБ ОШИБКЕ) ---
+
 	const handleFinishTest = async (answers) => {
 		setIsLoading(true);
 		try {
-			// 1. Отправляем ответы
-			// (Используем Promise.allSettled, чтобы один сбой не ломал всё)
 			await Promise.allSettled(Object.entries(answers).map(([qId, idx]) =>
 				fetch('/api/test/answer', {
 					method: 'POST',
@@ -694,19 +638,18 @@ const Dashboard = ({ user, onLogout }) => {
 				})
 			));
 
-			// 2. Завершаем
 			const res = await fetch('/api/test/complete', {
 				method: 'POST',
 				body: JSON.stringify({ attemptId: startedTest.attemptId }),
 				headers: { 'Content-Type': 'application/json' }
 			});
 
-			const text = await res.text(); // Сначала читаем как текст
+			const text = await res.text();
 			console.log("Ответ сервера (Complete):", text);
 
 			let data;
 			try {
-				data = JSON.parse(text); // Пробуем превратить в JSON
+				data = JSON.parse(text);
 			} catch (e) {
 				throw new Error("Сервер вернул не JSON: " + text);
 			}
@@ -714,7 +657,7 @@ const Dashboard = ({ user, onLogout }) => {
 			if (data.status === 'success') {
 				alert(`🎉 Тест завершен!\nРезультат: ${data.score} из ${data.max_score || '?'}`);
 				setStartedTest(null);
-				fetchCourses(); // Обновляем историю
+				fetchCourses();
 			} else {
 				alert("Ошибка при завершении: " + (data.error || text));
 			}
@@ -846,7 +789,6 @@ const Dashboard = ({ user, onLogout }) => {
 							Роль: <b>{user?.role}</b> | Студент <b>{user?.fullName}</b>
 						</p>
 					</div>
-					{/* ВСТАВИТЬ СЮДА: Кнопка создания курса (видна только учителю/админу) */}
 					{activeTab === 'home' && (isTeacher || isAdmin) && (
 						<button style={styles.addBtn} onClick={handleCreateCourse}>
 							+ Создать курс
@@ -860,7 +802,6 @@ const Dashboard = ({ user, onLogout }) => {
 
 
 				<section style={styles.contentArea}>
-					{/* ВКЛАДКА КУРСОВ */}
 					{activeTab === 'home' && (
 						<div style={styles.grid}>
 							{courses.length > 0 ? (
@@ -871,7 +812,6 @@ const Dashboard = ({ user, onLogout }) => {
 						</div>
 					)}
 
-					{/* --- ИСТОРИЯ ОЦЕНОК (НОВЫЙ БЛОК) --- */}
 					{activeTab === 'results' && (
 						<div style={styles.grid}>
 							{courses.length === 0 ? (
@@ -914,7 +854,6 @@ const Dashboard = ({ user, onLogout }) => {
 						</div>
 					)}
 
-					{/* ВКЛАДКА ПРОФИЛЯ */}
 					{activeTab === 'profile' && (
 						<div style={styles.card}>
 							<h3>Ваш профиль</h3>
@@ -952,8 +891,6 @@ const Dashboard = ({ user, onLogout }) => {
 						</div>
 					)}
 
-					{/* ВКЛАДКА ПОЛЬЗОВАТЕЛЕЙ (АДМИН) */}
-					{/* Вкладка ПОЛЬЗОВАТЕЛЕЙ (Таблица) */}
 					{activeTab === 'users' && isAdmin && (
 						<div style={styles.card}>
 							<h3 style={{ marginTop: 0 }}>Управление пользователями</h3>
@@ -1016,7 +953,7 @@ const Dashboard = ({ user, onLogout }) => {
 													defaultValue=""
 													onChange={(e) => {
 														if (e.target.value) handleRoleChange(u.id, e.target.value);
-														e.target.value = ""; // Сброс селекта
+														e.target.value = "";
 													}}
 													style={{ padding: '5px', borderRadius: '4px', border: '1px solid #ddd' }}
 												>
@@ -1038,7 +975,7 @@ const Dashboard = ({ user, onLogout }) => {
 	);
 };
 
-// Стили оставляем те же, я добавил только пару мелочей, они подтянутся из старого файла если ты их не удалял
+
 const styles = {
 	container: { display: 'flex', height: '100vh', backgroundColor: '#f9fafb', fontFamily: 'sans-serif' },
 	sidebar: {
@@ -1059,7 +996,7 @@ const styles = {
 
 	scoreBadge: (percent) => ({
 		fontWeight: 'bold',
-		color: percent >= 50 ? '#059669' : '#dc2626', // Зеленый если >50%, красный если меньше
+		color: percent >= 50 ? '#059669' : '#dc2626',
 		backgroundColor: percent >= 50 ? '#d1fae5' : '#fee2e2',
 		padding: '6px 12px',
 		borderRadius: '20px',
