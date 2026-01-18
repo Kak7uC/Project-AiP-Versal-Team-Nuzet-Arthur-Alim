@@ -2442,14 +2442,14 @@ int main(){
         cout << "========================================\n" << endl;
 });
     
-    cout << "C++ Server starting on port 8081..." << endl;
+    cout << "C++ Server starting on port 7081..." << endl;
     cout << "Connecting to Go server at: " << GO_SERVER_URL << endl;
     cout << "Test endpoints:" << endl;
-    cout << "1. http://localhost:8081/ping" << endl;
-    cout << "2. http://localhost:8081/task?Action=VIEW_OWN_NAME&ID=test&JWT=token" << endl;
+    cout << "1. http://localhost:7081/ping" << endl;
+    cout << "2. http://localhost:7081/task?Action=VIEW_OWN_NAME&ID=test&JWT=token" << endl;
     
     try {
-        svr.listen("0.0.0.0", 8081);
+        svr.listen("0.0.0.0", 7081);
     } catch (const exception& e) {
         cerr << "Server error: " << e.what() << endl;
         return 1;

@@ -921,6 +921,7 @@ func (am *AuthModule) handleCheckAuth(w http.ResponseWriter, r *http.Request) {
 	if state.Status == "granted" {
 		response["access_token"] = state.AccessToken
 		response["refresh_token"] = state.RefreshToken
+		response["user_id"] = state.UserID
 	}
 
 	w.Header().Set("Content-Type", "application/json")
@@ -970,7 +971,8 @@ func (am *AuthModule) handleRefreshToken(w http.ResponseWriter, r *http.Request)
 	newAccessToken := createAccessToken(user)
 
 	response := map[string]string{
-		"access_token": newAccessToken,
+		"access_token":  newAccessToken,
+		"refresh_token": req.RefreshToken,
 	}
 
 	w.Header().Set("Content-Type", "application/json")

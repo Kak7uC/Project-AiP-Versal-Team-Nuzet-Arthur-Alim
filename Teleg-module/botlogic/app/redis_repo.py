@@ -46,12 +46,9 @@ class RedisRepo:
         await self.save_session(chat_id, {"status": "anon", "login_token": login_token})
 
     async def save_await_code(self, chat_id: int) -> None:
-        # Одноразовый код пользователь пришлёт отдельным сообщением
         await self.save_session(chat_id, {"status": "await_code"})
 
     async def iter_sessions_by_status(self, status: str) -> Iterable[tuple[int, UserSession]]:
-        """Ищем по всем ключам (chat_id) в Redis и возвращаем только нужный статус.
-        """
         async for key in self.r.scan_iter(match="*"):
             try:
                 chat_id = int(key)
